@@ -85,7 +85,7 @@ jobs:
           version="$(node -p "require('./package.json').version")"
           apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)"
           digest() {
-            "$apksigner" verify --print-certs "$1" | tee /dev/stderr | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1
+            "$apksigner" verify --print-certs "$1" | tee /dev/stderr | grep -m1 'certificate SHA-256 digest:' | sed 's/.*certificate SHA-256 digest: *//'
           }
           phone="$(digest "dist-android/SleepingAid-${version}.apk")"
           watch="$(digest "dist-android/SleepingAid-Watch-${version}.apk")"
