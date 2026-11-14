@@ -95,9 +95,23 @@ the summary screen removes everything.
 ## Install
 
 - **Web:** open the served app in Chrome on Android over HTTPS and choose "Install app" (Web Bluetooth, Wake Lock and service workers need HTTPS or localhost).
-- **Android phone app:** download the APK from the GitHub Releases page and follow docs/ANDROID_INSTALL.md. Prerelease and local builds are signed with a debug key and are for testing only; see docs/SIGNING.md.
-- **Watch (Wear OS):** sideload the watch APK over Wi-Fi debugging, see docs/WATCH_SETUP.md. Not yet tested on a real Galaxy Watch4.
+- **Android phone app:** download `SleepingAid-0.1.0-phone-mvp-debugsigned.apk` from the [v0.1.0 release](https://github.com/IvanescuChristian/Sleeping_Aid/releases/tag/v0.1.0) (the checksums are in `SHA256SUMS.txt` there) and follow docs/ANDROID_INSTALL.md. The v0.1.0 MVP release (and local builds) are debug-signed; uninstall before installing a future version. See docs/SIGNING.md.
+- **Watch (Wear OS):** download `SleepingAid-0.1.0-watch-mvp-debugsigned.apk` from the same release and sideload it: `adb pair`, `adb connect`, `adb install` (see docs/WATCH_SETUP.md). Not yet tested on a real Galaxy Watch4.
 - **Before the first real night:** work through docs/NIGHT_TEST_CHECKLIST.md, starting with a 20-minute nap test.
+
+## What you must test on real hardware
+
+The app has been verified on Android and Wear OS emulators only. On a Galaxy S24 FE and a Galaxy Watch4 Classic, test in this order:
+
+1. A 20-minute nap test first.
+2. A full night, on and off the charger.
+3. The alarm with the screen off, locked, in Doze and after swiping the app away.
+4. A reboot with an armed alarm.
+5. The watch link and permissions.
+6. Phone and watch battery use.
+7. Samsung battery settings (set the app to "Unrestricted").
+
+Details are in docs/NIGHT_TEST_CHECKLIST.md.
 
 ## Run, build, test
 

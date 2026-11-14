@@ -2,7 +2,7 @@
 
 Sleeping Aid for Android is installed from an APK file (sideloading). It is not on Google Play. These steps are written for Samsung phones with One UI; other phones are similar but the menu names differ.
 
-Status: the app is built and unit-tested. It has not yet been used for a full night on a real phone. Treat the first nights as a test and keep your normal alarm as a backup.
+Status: the app is built, unit-tested and emulator-verified (not yet on a real phone). It has not yet been used for a full night on a real phone. Treat the first nights as a test and keep your normal alarm as a backup.
 
 ## 1. Download
 

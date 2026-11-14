@@ -38,7 +38,7 @@
 
 - Emulator finding: with the screen off the WebView page is hidden after about a minute and JS timers drop to one per minute, so the JS smart wake starves (the native hard alarm still fires).
 - Fix: `setNightScreen` keeps the screen on at minimum brightness during a night (the Screen Wake Lock API is not used in the app); a notice appears if the screen was turned off; `getAlarmState` closes a stale JS alarm screen after a native Stop.
-- Model: smart wake needs the app open with the screen on; the backup alarm is native. After a reboot tracking resumes only when the app is opened. Native smart wake is possible future work.
+- Model (superseded by checkpoint 6): smart wake needed the app open with the screen on; the backup alarm is native. After a reboot tracking resumed only when the app was opened. Native smart wake was done in checkpoint 6.
 
 ## 2026-11-14 checkpoint 4: Wear OS watch companion (phase B)
 
@@ -49,9 +49,9 @@
 
 ## 2026-11-14 checkpoint 5: CI and documentation
 
-- GitHub Actions workflow: typecheck, unit and end-to-end tests, APK build, same-certificate check for phone and watch, GitHub Release with checksums on `v*` tags (fails without a release key).
+- GitHub Actions workflow: typecheck, unit and end-to-end tests, APK build, same-certificate check for phone and watch, GitHub Release with checksums on `v*` tags (originally failed without a release key; superseded by checkpoint 7, the MVP is released debug-signed).
 - Docs: Android install, watch setup, night test checklist, signing. README platform status and known limits; ARCHITECTURE native layer, watch module and protocol.
-- Release signing key not yet decided; current local APKs are debug-signed and not for release.
+- Release signing key not yet decided (superseded by checkpoint 7: the MVP release is debug-signed and says so; see docs/SIGNING.md).
 
 ## 2026-11-14 checkpoint 6: native smart wake
 
@@ -61,4 +61,12 @@
 - JS on Android runs no pipeline any more and the screen-on default and its notice are gone (keep-screen-on is an optional setting). The web app is unchanged.
 - Smart ring goes through the same `setAlarmClock` path as the backup (re-armed about a second ahead), because a foreground-service start from the night service is not guaranteed to be allowed.
 - Watch batches are decoded and fed natively (the 60 s shift is kept so JS and Kotlin see the same timeline). Heart rate on the phone app comes from the watch only; the Web Bluetooth button is hidden there.
-- Emulator check (Android 35, synthetic accelerometer): smart wake fired at the window opening with the screen off, deep Doze forced and the task removed; see the report for the run evidence. Not verified on a real phone.
+- Emulator check (Android 35, synthetic accelerometer): smart wake fired at the window opening with the screen off, deep Doze forced and the task removed. Not verified on a real phone. Full results are summarised in checkpoint 7.
+
+## 2026-11-14 checkpoint 7: v0.1.0 MVP released
+
+- Release: https://github.com/IvanescuChristian/Sleeping_Aid/releases/tag/v0.1.0 (published, not a prerelease). Assets: `SleepingAid-0.1.0-phone-mvp-debugsigned.apk`, `SleepingAid-0.1.0-watch-mvp-debugsigned.apk`, `SHA256SUMS.txt`.
+- CI green: tests, Kotlin JVM tests, build, same-certificate check, release.
+- Phone, native smart wake, verified on an Android 15 (API 35) emulator with the screen off, unplugged, deep Doze forced and the task removed: the smart alarm fired inside the window about 5 minutes after simulated movement began; with constant stillness the backup fired exactly at the window end; after a reboot the backup was re-armed and NightService resumed by itself; after a process kill the sticky restart left no data gap; no second ring after Stop.
+- Watch app verified on a Wear OS 5 emulator: permissions, explanation dialog, health foreground service, synthetic heart rate, MEDITATION exercise with 5 s heart-rate batching, batches queued, survived 5 minutes of screen-off.
+- Not tested: real Galaxy S24 FE and Galaxy Watch4 Classic, the Data Layer phone-to-watch link, battery use, One UI background limits, the wake-up accelerometer batching path (JVM-tested only), stage accuracy on real sleepers.

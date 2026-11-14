@@ -2,7 +2,7 @@
 
 ## State
 
-Version 0.1.0: engine, simulation, a vanilla TypeScript PWA, an Android phone app with a native hard alarm (Capacitor) and a Wear OS watch companion (see ARCHITECTURE.md). No web framework; the app builds to `dist/` with Vite. Android APKs come from `scripts/build-android.sh`; CI is `.github/workflows/android.yml`.
+Version 0.1.0: engine, simulation, a vanilla TypeScript PWA, an Android phone app with a native hard alarm (Capacitor) and a Wear OS watch companion (see ARCHITECTURE.md). No web framework; the app builds to `dist/` with Vite. Android APKs come from `scripts/build-android.sh`; CI is `.github/workflows/android.yml`. v0.1.0 is released (debug-signed MVP, phone and watch APKs plus SHA256SUMS.txt): https://github.com/IvanescuChristian/Sleeping_Aid/releases/tag/v0.1.0. It is verified on Android 15 and Wear OS 5 emulators only; the real-hardware list below is still open.
 
 ## How to run
 
