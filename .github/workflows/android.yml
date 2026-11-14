@@ -68,14 +68,15 @@ jobs:
             exit 1
           fi
 
-      - name: Kotlin engine unit tests
-        working-directory: android
-        run: ./gradlew :app:testDebugUnitTest
-
       # MVP: both APKs are signed with the auto-generated debug key. There is no release keystore.
       - name: Build phone and watch APKs
         # The Android SDK is preinstalled on ubuntu-latest; ANDROID_HOME is already set by the image.
         run: scripts/build-android.sh
+
+      # Runs after the build because cap sync generates Gradle files the project needs.
+      - name: Kotlin engine unit tests
+        working-directory: android
+        run: ./gradlew :app:testDebugUnitTest
 
       # WHY: the Wear OS Data Layer only delivers messages between apps with the same package name AND the
       # same signing certificate. If the two APKs ever differ, the watch silently stops talking to the phone.
