@@ -2,7 +2,7 @@
 
 **NOT yet tested on a real Galaxy Watch4.** The watch app has been built and its protocol is unit-tested, but it has never run on a real watch. Expect problems and report them.
 
-The watch app is only a sensor relay. It records heart rate and wrist motion at night and sends them to the phone app, which makes all decisions and rings the alarm. It does nothing useful without the phone app.
+The watch is the primary sensor of Sleeping Aid on Android. Wear it all night: it records heart rate and wrist motion and sends them to the phone app, which makes all decisions and rings the alarm. The phone on the mattress is only the fallback, used while the watch is silent or not set up. The watch app does nothing useful without the phone app.
 
 The watch app and the phone app have the same package name and must be signed with the same key. Install the phone and watch APKs from the same release (see SIGNING.md), and uninstall the previous version before installing a new one.
 
@@ -51,10 +51,19 @@ Also open the Sleeping Aid phone app once so the watch finds it.
 
 ## 5. How the phone starts tracking
 
-1. In the phone app, the setup screen shows whether a watch with the watch app is connected, and a "Use Wear OS watch" checkbox (on by default).
+1. In the phone app, the setup screen lists "Use Wear OS watch" first, checked by default, with a line saying whether a watch with the watch app is connected. Below it, "Phone on the mattress" is the fallback; leave it checked so the phone covers the night if the watch dies or leaves Bluetooth range.
 2. When you start a night the phone sends a start message to the watch. The watch starts recording as a foreground service with an ongoing notification.
 3. When the night ends or you stop it, the phone sends a stop message. The watch also stops itself after 14 hours.
-4. If the watch stays silent for a few minutes, the phone switches to its own motion sensor.
+4. While the night runs, the status line shows the source: "Source: Watch" in the normal case, "Source: Phone fallback" while the watch is not delivering.
+
+### Watch first, phone as fallback
+
+- The watch is used for every epoch while it delivers. The phone sensor is ignored then (its samples are dropped), so one epoch never mixes both sources and nothing is counted twice.
+- If no fresh watch epoch arrives for 150 seconds (the watch sends about every 30 seconds), the phone sensor takes over. The minutes before the takeover appear as no data in the hypnogram.
+- When the watch comes back, the phone keeps the night until the watch has delivered 3 consecutive fresh epochs over at least one minute, then the watch is the source again. A watch that keeps dropping out cannot make the source flip back and forth faster than that.
+- Data the watch buffered while it was out of reach is not back-filled into the minutes the phone already covered.
+- Heart rate only exists on the watch, so it is used whenever it arrives, whichever source supplies motion.
+- After the night, the summary says how much of it came from the watch, from the phone fallback, and how much was missing.
 
 ## 6. If the watch does not start by itself
 
@@ -66,4 +75,4 @@ Android sometimes refuses to start a recording service from the background. The 
 - Battery use of the watch over a full night is unknown. Start the night with a good charge and record the battery before and after (see NIGHT_TEST_CHECKLIST.md).
 - Samsung Health may show a session while the watch records, because heart-rate recording uses an Android exercise session.
 - The Samsung Health Sensor SDK is not used. It gives access to extra Samsung sensors, but it needs Samsung partner approval for normal use and otherwise only works in a developer mode that is unsuitable for a sideloaded app. The app uses the standard Wear OS Health Services and accelerometer instead.
-- Wrist motion thresholds are not validated; stages from the watch may differ from stages from the phone.
+- Wrist motion thresholds are not validated. The watch uses the same activity formula and, for now, the same wake and stillness thresholds as the phone on a mattress, because no real wrist night has been recorded. A wrist moves more than a mattress, so stages from the watch may differ from stages from the phone (probably too sensitive). Please send back a night's summary so they can be tuned.

@@ -4,6 +4,7 @@ package io.github.ivanescuchristian.sleepingaid
 
 import io.github.ivanescuchristian.sleepingaid.engine.Epoch
 import io.github.ivanescuchristian.sleepingaid.engine.EpochResult
+import io.github.ivanescuchristian.sleepingaid.engine.EpochSource
 import io.github.ivanescuchristian.sleepingaid.engine.Stage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -19,6 +20,20 @@ class NightStoreFormatTest {
         val back = roundTrip(e, r)!!
         assertEquals(e, back.epoch)
         assertEquals(r, back.result)
+    }
+
+    @Test fun roundTripsTheMotionSource() {
+        for (src in listOf(EpochSource.WATCH, EpochSource.PHONE, null)) {
+            val e = Epoch(1_800_000_120_000, 0.01, 58.0, 1.1, 290, 14, src)
+            assertEquals(e, roundTrip(e, EpochResult(e.start, Stage.LIGHT, 0.7))!!.epoch)
+        }
+    }
+
+    @Test fun stillReadsLinesWrittenBeforeTheSourceColumnExisted() {
+        // A night that was running while the app was updated from 0.1.0 must keep its epochs.
+        val back = NightStore.parse("1800000000000,light,0.6,0.004,57.0,1.2,290,14")!!
+        assertEquals(null, back.epoch.source)
+        assertEquals(290, back.epoch.motionSamples)
     }
 
     @Test fun roundTripsAGapEpochWithNaNActivityAndNoHeartRate() {
@@ -39,5 +54,6 @@ class NightStoreFormatTest {
         assertNull(NightStore.parse("1800000000000,light,0.6,0.0,,,175")) // cut off by a kill mid-write
         assertNull(NightStore.parse("1800000000000,bogus,0.6,0.0,,,175,0"))
         assertNull(NightStore.parse("x,light,0.6,0.0,,,175,0"))
+        assertNull(NightStore.parse("1800000000000,light,0.6,0.0,,,175,0,watch,extra"))
     }
 }

@@ -6,9 +6,10 @@ import android.content.Context
 import io.github.ivanescuchristian.sleepingaid.engine.AlarmDecision
 import io.github.ivanescuchristian.sleepingaid.engine.AlarmReason
 import io.github.ivanescuchristian.sleepingaid.engine.EngineConfig
+import io.github.ivanescuchristian.sleepingaid.engine.EpochSource
 import io.github.ivanescuchristian.sleepingaid.engine.MotionSample
-import io.github.ivanescuchristian.sleepingaid.engine.MotionSource
 import io.github.ivanescuchristian.sleepingaid.engine.Pipeline
+import io.github.ivanescuchristian.sleepingaid.engine.SourceSelector
 import io.github.ivanescuchristian.sleepingaid.engine.Stage
 import io.github.ivanescuchristian.sleepingaid.engine.WatchBatch
 import io.github.ivanescuchristian.sleepingaid.engine.WatchFeed
@@ -23,7 +24,8 @@ object NightTracker {
     private var pipe: Pipeline? = null
     private var night: NightStore.Night? = null
 
-    private var lastActivityAt = 0L
+    /** Watch first, phone as fallback; see SourceSelector. Only touched under [lock]. */
+    private var selector: SourceSelector? = null
     private var lastHrBpm = 0.0
     private var lastHrAt = 0L
     private var lastTickAt = 0L
@@ -45,7 +47,9 @@ object NightTracker {
         p.restore(NightStore.readEpochs(app).map { it.epoch })
         pipe = p
         night = n
-        lastActivityAt = 0L
+        // startedAt, not now: after a process restart the grace period is long over, so the phone covers the gap
+        // and the watch returns through the normal recovery hysteresis.
+        selector = SourceSelector(n.startedAt, n.useWatch)
         lastHrAt = 0L
         lastTickAt = now
         watchStartResends = 0
@@ -54,20 +58,15 @@ object NightTracker {
     fun stop() = synchronized(lock) {
         pipe = null
         night = null
-    }
-
-    /** Which sensor feeds motion now. Both must never run together: they add to the same epoch accumulator. */
-    fun motionSource(now: Long): MotionSource? = synchronized(lock) {
-        val n = night ?: return null
-        if (!n.useWatch) return MotionSource.PHONE
-        WatchFeed.chooseMotionSource(now, n.startedAt, lastActivityAt)
+        selector = null
     }
 
     /** One phone accelerometer sample (event time [t], phone clock). Returns true when the night is over. */
     fun onPhoneMotion(ctx: Context, t: Long, ax: Double, ay: Double, az: Double, now: Long): Boolean = synchronized(lock) {
         val p = pipe ?: return true
         val n = night ?: return true
-        if (n.useMotion && (!n.useWatch || WatchFeed.chooseMotionSource(now, n.startedAt, lastActivityAt) == MotionSource.PHONE)) {
+        // The phone sensor only counts while it is the motion source; with the watch live its samples are dropped.
+        if (n.useMotion && selector?.source(now) == EpochSource.PHONE) {
             p.ingestMotion(MotionSample(t, ax, ay, az))
         }
         // Once a second at most: the engine only needs a tick per epoch, and a tick is cheap but not free.
@@ -79,7 +78,8 @@ object NightTracker {
         val p = pipe ?: return false
         val n = night ?: return false
         if (!n.useWatch) return false
-        if (WatchFeed.apply(p, b, notBefore = n.startedAt - 60_000)) lastActivityAt = now
+        val sel = selector ?: return false
+        WatchFeed.apply(p, sel, b, now, notBefore = n.startedAt - 60_000)
         b.hr.lastOrNull()?.let {
             lastHrBpm = it.bpm
             lastHrAt = now
@@ -96,6 +96,8 @@ object NightTracker {
 
     private fun tickLocked(ctx: Context, p: Pipeline, n: NightStore.Night, now: Long): Boolean {
         lastTickAt = now
+        // Evaluated on every tick, so a silent watch is noticed without any input and the status stays right.
+        selector?.source(now)
         resendWatchStart(ctx, n, now)
         // Phone samples arrive in batches, so epochs may only be closed by the clock once the batch that holds
         // their last samples must have been delivered. The window rules still use the real clock.
@@ -107,7 +109,7 @@ object NightTracker {
     }
 
     private fun resendWatchStart(ctx: Context, n: NightStore.Night, now: Long) {
-        if (!n.useWatch || lastActivityAt != 0L) return
+        if (!n.useWatch || selector?.watchSeen == true) return
         val due = RESEND_START_AT_MS.getOrNull(watchStartResends) ?: return
         if (now - n.startedAt >= due) {
             watchStartResends++
@@ -151,11 +153,15 @@ object NightTracker {
     fun snapshot(ctx: Context, now: Long): Snapshot = synchronized(lock) {
         val p = pipe
         val n = night ?: NightStore.load(ctx.applicationContext)
-        val hr = if (lastHrAt > 0 && now - lastHrAt < 150_000) lastHrBpm else null
+        val hr = if (lastHrAt > 0 && now - lastHrAt < EngineConfig.WATCH_FRESH_MS) lastHrBpm else null
         if (p != null && n != null) {
+            val sel = selector
+            // Wire values: watch | watch-waiting (watch chosen, nothing yet) | phone (no watch wanted) |
+            // phone-fallback (watch wanted but not live) | none (no sensor can deliver motion).
             val src = when {
-                n.useWatch && WatchFeed.chooseMotionSource(now, n.startedAt, lastActivityAt) == MotionSource.WATCH -> if (lastActivityAt > 0) "watch" else "watch-waiting"
-                n.useMotion -> "phone"
+                !n.useWatch -> if (n.useMotion) "phone" else "none"
+                sel?.source(now) == EpochSource.WATCH -> if (sel.watchSeen) "watch" else "watch-waiting"
+                n.useMotion -> "phone-fallback"
                 else -> "none"
             }
             Snapshot(p.alarm.lastStage.wire, p.results.size, p.alarm.lastEpochStart ?: 0L, src, hr, p.pipelineErrors, true)

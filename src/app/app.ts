@@ -37,6 +37,14 @@ const NATIVE_NOTE =
 const NATIVE_HINT =
   'Put the phone on the mattress or the nightstand, ideally charging. Heart rate and motion come from the Wear OS watch when it is connected, otherwise from the phone sensor.';
 
+/** Share of the night's epochs per motion source, as a short sentence for the summary. */
+function sourceShareText(c: { watch: number; phone: number; none: number }): string {
+  const total = c.watch + c.phone + c.none;
+  if (total === 0) return '';
+  const pct = (n: number) => `${Math.round((100 * n) / total)}%`;
+  return `Motion came from the watch for ${pct(c.watch)} of the night, from the phone fallback for ${pct(c.phone)}, and was missing for ${pct(c.none)}.`;
+}
+
 const STAGE_TEXT: Record<string, string> = { wake: 'Awake', light: 'Light sleep', deep: 'Deep sleep', rem: 'REM', unknown: 'Waiting for data' };
 
 export function mountApp(root: HTMLElement): void {
@@ -77,8 +85,8 @@ export function mountApp(root: HTMLElement): void {
         watchNote.textContent = !st.available
           ? 'Watch support is not available on this phone.'
           : st.connected
-            ? `Watch connected: ${st.nodes.map((n) => n.name).join(', ')}. It records heart rate and wrist motion; if it goes silent, the phone sensor takes over.`
-            : 'No watch with the Sleeping Aid watch app found. Install the watch app and open it once. The phone sensor is used instead.';
+            ? `Watch connected: ${st.nodes.map((n) => n.name).join(', ')}. Wear it tonight: it supplies heart rate and wrist motion. Only if it goes silent for 2.5 minutes does the phone sensor take over, and the watch is used again once it has been back for a minute.`
+            : 'No watch with the Sleeping Aid watch app found. Install the watch app and open it once (see docs/WATCH_SETUP.md). Until then the phone on the mattress is used.';
       });
     }
     const hrBtn = h('button', { type: 'button', id: 'connect-hr', class: 'btn' }, 'Connect heart-rate sensor');
@@ -172,9 +180,10 @@ export function mountApp(root: HTMLElement): void {
           'section',
           null,
           h('h2', null, 'Sensors'),
-          h('label', { class: 'check' }, motion, ' Use motion (phone lying on the mattress)'),
-          watchLink.enabled && h('label', { class: 'check' }, watchBox, ' Use Wear OS watch (heart rate and motion)'),
+          // On Android the watch is the primary sensor and the phone sensor its fallback, so the watch comes first.
+          watchLink.enabled && h('label', { class: 'check' }, watchBox, ' Use Wear OS watch (heart rate and wrist motion)'),
           watchLink.enabled && watchNote,
+          h('label', { class: 'check' }, motion, watchLink.enabled ? ' Phone on the mattress (fallback when the watch is not available)' : ' Use motion (phone lying on the mattress)'),
           // Web Bluetooth does not run reliably with the screen off, so the native engine takes heart rate from the watch only.
           !nativeAlarm.enabled && hrBtn,
           !nativeAlarm.enabled && hrNote,
@@ -293,10 +302,12 @@ export function mountApp(root: HTMLElement): void {
       set(
         motionLine,
         st.motionSource === 'watch'
-          ? 'Motion: watch'
+          ? 'Source: Watch'
           : st.motionSource === 'watch-waiting'
-            ? 'Motion: waiting for the watch'
-            : st.motionState === 'ok'
+            ? 'Source: waiting for the watch'
+            : st.motionSource === 'phone-fallback'
+              ? `Source: Phone fallback (watch not delivering)${st.motionState === 'ok' ? '' : ', phone sensor starting...'}`
+              : st.motionState === 'ok'
               ? `Motion: ${st.motionHz} Hz`
               : st.motionState === 'off'
                 ? 'Motion: off'
@@ -500,6 +511,7 @@ export function mountApp(root: HTMLElement): void {
             ['Alarm', night.alarm ? `${night.alarm.reason} at ${fmtClock(night.alarm.at)}` : 'stopped manually'],
           ].flatMap(([k, v]) => [h('dt', null, k), h('dd', null, v)]),
         ),
+        !!sm.sourceEpochs && h('p', { class: 'hint', id: 'source-share' }, sourceShareText(sm.sourceEpochs as { watch: number; phone: number; none: number })),
         h('div', { class: 'hyp-wrap', id: 'hypnogram-wrap' }, drawHypnogram(sm.hypnogram, (night.binEpochs * 30) / 60)),
         h('p', { class: 'hint' }, 'Stages are estimated from motion and heart rate. They are not a medical measurement.'),
       );

@@ -112,7 +112,7 @@ export class NativeNightSession {
   }
 
   private async results(): Promise<EpochResult[]> {
-    return (await this.o.api.epochs()).filter((e) => STAGES.has(e.stage)).map((e) => ({ start: e.start, stage: e.stage as Stage, confidence: e.confidence }));
+    return (await this.o.api.epochs()).filter((e) => STAGES.has(e.stage)).map((e) => ({ start: e.start, stage: e.stage as Stage, confidence: e.confidence, source: e.source === 'watch' || e.source === 'phone' ? e.source : null }));
   }
 
   /** Stops polling. The engine is stopped by nativeAlarm.disarm(). */

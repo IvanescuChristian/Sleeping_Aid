@@ -26,6 +26,8 @@ export interface NightSummary {
   /** 0-100, see qualityScore. */
   quality: number;
   hypnogram: Stage[];
+  /** Epochs per motion source (none = no motion at all). Absent in nights saved before watch-first sourcing. */
+  sourceEpochs?: { watch: number; phone: number; none: number };
 }
 
 const EPOCH_MIN = EPOCH_MS / 60_000;
@@ -83,6 +85,13 @@ export function summarizeNight(results: readonly EpochResult[]): NightSummary {
   const meanCycleMin = meanCycle(hypnogram, onsetIdx);
   const restorativeShare = totalSleepMin > 0 ? (minutesPerStage.deep + minutesPerStage.rem) / totalSleepMin : 0;
 
+  // Only native nights carry a source per epoch; a web night has none and gets no field.
+  let sourceEpochs: NightSummary['sourceEpochs'];
+  if (results.some((r) => r.source !== undefined)) {
+    sourceEpochs = { watch: 0, phone: 0, none: 0 };
+    for (const r of results) sourceEpochs[r.source ?? 'none']++;
+  }
+
   return {
     startMs: results[0]?.start ?? 0,
     totalSleepMin,
@@ -93,6 +102,7 @@ export function summarizeNight(results: readonly EpochResult[]): NightSummary {
     meanCycleMin,
     quality: qualityScore({ totalSleepMin, efficiency, restorativeShare, latencyMin: sleepOnsetLatencyMin, awakenings }),
     hypnogram,
+    ...(sourceEpochs ? { sourceEpochs } : {}),
   };
 }
 

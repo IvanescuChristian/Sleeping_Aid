@@ -10,7 +10,9 @@ import io.github.ivanescuchristian.sleepingaid.engine.EngineConfig.DEEP_STILL_EP
 import io.github.ivanescuchristian.sleepingaid.engine.EngineConfig.REM_SD_RATIO
 import io.github.ivanescuchristian.sleepingaid.engine.EngineConfig.REM_STILL_EPOCHS
 import io.github.ivanescuchristian.sleepingaid.engine.EngineConfig.STILL_ACTIVITY
+import io.github.ivanescuchristian.sleepingaid.engine.EngineConfig.STILL_ACTIVITY_WATCH
 import io.github.ivanescuchristian.sleepingaid.engine.EngineConfig.WAKE_THRESHOLD
+import io.github.ivanescuchristian.sleepingaid.engine.EngineConfig.WAKE_THRESHOLD_WATCH
 import kotlin.math.max
 import kotlin.math.min
 
@@ -66,11 +68,14 @@ class Stager : EpochStager {
         }
 
         val weighted = weightedActivity()
-        val still = e.activity < STILL_ACTIVITY
+        // Wrist and mattress move differently, so each source has its own thresholds (equal until wrist data exists).
+        val watch = e.source == EpochSource.WATCH
+        val wakeThreshold = if (watch) WAKE_THRESHOLD_WATCH else WAKE_THRESHOLD
+        val still = e.activity < (if (watch) STILL_ACTIVITY_WATCH else STILL_ACTIVITY)
         stillRun = if (still) stillRun + 1 else 0
 
-        if (weighted >= WAKE_THRESHOLD) {
-            return EpochResult(e.start, Stage.WAKE, clamp01(0.55 + 0.45 * min(1.0, weighted / (4 * WAKE_THRESHOLD))))
+        if (weighted >= wakeThreshold) {
+            return EpochResult(e.start, Stage.WAKE, clamp01(0.55 + 0.45 * min(1.0, weighted / (4 * wakeThreshold))))
         }
 
         if (hrMean == null || hrSd == null || hrMeans.count < BASELINE_MIN_HR_EPOCHS) return motionOnly(e)

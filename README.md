@@ -3,12 +3,14 @@
 Sleeping_Aid is a smart alarm: an installable web app (PWA), an Android phone app
 and an optional Wear OS watch companion.
 You choose a wake window, for example 06:30 to 07:00. During the night the app
-estimates your sleep stage from the phone's motion sensor (lying on the mattress)
-and, optionally, a Bluetooth heart-rate sensor. It rings the alarm at the first
+estimates your sleep stage. On Android the primary source is a Wear OS watch worn
+all night (heart rate and wrist motion); the phone's motion sensor (lying on the
+mattress) is the fallback when the watch is absent or silent. In the web app, the
+phone's motion sensor and, optionally, a Bluetooth heart-rate sensor are used. It rings the alarm at the first
 moment inside the window when you are in light sleep, and at the window end at
 the latest.
 
-Status: version 0.1.0, not yet validated on real sleepers or a real night. Read
+Status: version 0.1.1, not yet validated on real sleepers or a real night. Read
 the platform status, the status table and the known limits below before relying
 on it for something important.
 
@@ -18,7 +20,7 @@ on it for something important.
 | --- | --- |
 | Web app (PWA, Chrome on Android) | Working; verified in a desktop browser emulating a phone. Cannot ring reliably with the screen off. |
 | Android phone app (sideloaded APK) | Built and unit-tested. Has a native hard alarm (system alarm clock) that rings at the window end with the screen off. The smart wake runs natively (Kotlin port of the engine), so it works with the screen off, the app in the background or swiped away. Verified on an Android 35 emulator (screen off, Doze, app removed, process killed); not yet tested on a real phone night. |
-| Wear OS watch companion (Galaxy Watch4 and other Wear OS 3+ watches) | Built, **not tested on a real watch**. Streams heart rate and wrist motion to the phone app. |
+| Wear OS watch companion (Galaxy Watch4 and other Wear OS 3+ watches) | Built, **not tested on a real watch**. The primary sensor on Android: streams heart rate and wrist motion to the phone app all night; the phone sensor takes over only while the watch is silent. |
 | iOS | Not supported. |
 
 ## How the smart wake works
@@ -41,7 +43,7 @@ only (see ARCHITECTURE.md) and are not yet validated on real sleepers.
 Android phone app:
 
 - The hard alarm at the window end is a native system alarm clock (`AlarmManager.setAlarmClock`). It rings with the screen off and the phone locked, and does not need the app on screen. It needs the "Alarms & reminders" permission; without it the night will not start.
-- The smart wake (ringing early, in light sleep) is decided by a native Kotlin port of the engine, run by a foreground "night" service. It needs neither the screen nor the app: motion comes from the phone accelerometer (and heart rate plus wrist motion from the watch, if connected), staging and the decision happen natively, and the epochs are stored so the app can draw the night when you open it. If the smart rule never fires, the exact backup alarm at the window end rings. Both go through the same alarm path, and the night records which one woke you.
+- The smart wake (ringing early, in light sleep) is decided by a native Kotlin port of the engine, run by a foreground "night" service. It needs neither the screen nor the app: motion and heart rate come from the watch whenever it is delivering, and from the phone accelerometer only while the watch is silent or absent (never both for the same epoch, see ARCHITECTURE.md), staging and the decision happen natively, and the epochs are stored so the app can draw the night when you open it. If the smart rule never fires, the exact backup alarm at the window end rings. Both go through the same alarm path, and the night records which one woke you.
 - Power: where the phone has a wake-up accelerometer the CPU is woken only to deliver batches (about every 20 s) and no wake lock is held. Without one, a bounded partial wake lock keeps the CPU up until shortly after the window end. In deep Doze (phone unplugged and motionless for a long time) Android may still pause tracking on such phones; the backup alarm is unaffected. Setting the battery to "Unrestricted" (docs/ANDROID_INSTALL.md) avoids that.
 - If Android kills the process the service restarts itself and continues from its stored epochs. After a reboot the backup alarm is re-armed and tracking restarts if Android allows it; otherwise a "Tap to resume night tracking" notification appears.
 - Heart rate on the phone app comes from the Wear OS watch only: Bluetooth heart rate through the web view cannot run reliably with the screen off.
@@ -57,9 +59,9 @@ Both: do not rely on this app alone for flights, exams or shifts.
 
 ## Known limits
 
-- Wrist (watch) motion thresholds are tuned for a phone lying on a mattress. Wrist activity is a different signal, so staging from the watch is unvalidated and may be too sensitive or not sensitive enough.
+- Wrist (watch) motion uses the same activity formula as the phone, and its wake and stillness thresholds currently equal the phone-on-mattress values because no real wrist night has been recorded to calibrate on. A wrist moves more than a mattress, so staging from the watch is unvalidated and may be too sensitive. The thresholds are separate settings (`WAKE_THRESHOLD_WATCH`, `STILL_ACTIVITY_WATCH`) so they can be tuned once real data exists.
 - Watch data reaches the phone about 60 seconds late (every watch timestamp is shifted by 60 s so epochs line up). Hypnogram times and smart-wake decisions lag by that much.
-- The Wear OS Data Layer is best effort: messages can be delayed or lost if the watch is out of range or its Bluetooth link drops. The phone sensor takes over if the watch goes silent.
+- The Wear OS Data Layer is best effort: messages can be delayed or lost if the watch is out of range or its Bluetooth link drops. If the watch delivers nothing for 2.5 minutes the phone sensor takes over (those minutes before the takeover show as no data), and the watch is used again after it has delivered for one minute. Epochs the watch buffered while it was out of reach are not back-filled.
 - There is no correction for clock differences between the watch and the phone.
 - Stage accuracy has only been measured on synthetic nights, whose generator shares assumptions with the stager. The numbers are optimistic.
 - Samsung One UI battery optimisation can stop background apps. Set Sleeping Aid to "Unrestricted" (see docs/ANDROID_INSTALL.md).
@@ -95,8 +97,8 @@ the summary screen removes everything.
 ## Install
 
 - **Web:** open the served app in Chrome on Android over HTTPS and choose "Install app" (Web Bluetooth, Wake Lock and service workers need HTTPS or localhost).
-- **Android phone app:** download `SleepingAid-0.1.0-phone-mvp-debugsigned.apk` from the [v0.1.0 release](https://github.com/IvanescuChristian/Sleeping_Aid/releases/tag/v0.1.0) (the checksums are in `SHA256SUMS.txt` there) and follow docs/ANDROID_INSTALL.md. The v0.1.0 MVP release (and local builds) are debug-signed; uninstall before installing a future version. See docs/SIGNING.md.
-- **Watch (Wear OS):** download `SleepingAid-0.1.0-watch-mvp-debugsigned.apk` from the same release and sideload it: `adb pair`, `adb connect`, `adb install` (see docs/WATCH_SETUP.md). Not yet tested on a real Galaxy Watch4.
+- **Android phone app:** download `SleepingAid-0.1.1-phone-mvp-debugsigned.apk` from the [v0.1.1 release](https://github.com/IvanescuChristian/Sleeping_Aid/releases/tag/v0.1.1) (the checksums are in `SHA256SUMS.txt` there) and follow docs/ANDROID_INSTALL.md. The v0.1.1 MVP release (and local builds) are debug-signed; uninstall before installing a future version. See docs/SIGNING.md.
+- **Watch (Wear OS):** download `SleepingAid-0.1.1-watch-mvp-debugsigned.apk` from the same release and sideload it: `adb pair`, `adb connect`, `adb install` (see docs/WATCH_SETUP.md). Not yet tested on a real Galaxy Watch4.
 - **Before the first real night:** work through docs/NIGHT_TEST_CHECKLIST.md, starting with a 20-minute nap test.
 
 ## What you must test on real hardware

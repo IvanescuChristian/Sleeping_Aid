@@ -272,20 +272,55 @@ class ResumeAndWatchTest {
             listOf(WatchEpoch(T0 - 10 * EPOCH_MS, 0.01, 10), WatchEpoch(T0, 0.01, 298)),
             listOf(HrSample(T0 - 10 * EPOCH_MS, 50.0), HrSample(T0 + 1000, 58.0)),
         )
-        assertTrue(WatchFeed.apply(pipe, batch, notBefore = T0 - 60_000))
+        val sel = SourceSelector(T0, watchEnabled = true)
+        // Arrives 15 s after epoch T0 ended: fresh, so the watch is admitted.
+        val now = T0 + EPOCH_MS + 15_000
+        assertTrue(WatchFeed.apply(pipe, sel, batch, now, notBefore = T0 - 60_000))
         pipe.tick(T0 + 5 * EPOCH_MS)
         // Epoch T0 lands WATCH_SHIFT_MS later (two epochs); the old leftovers were dropped.
         assertEquals(listOf("${T0 + EngineConfig.WATCH_SHIFT_MS}:298:1"), seen.filter { it.contains(":298:") })
-        assertFalse(WatchFeed.apply(pipe, batch.copy(epochs = emptyList()), notBefore = 0))
+        assertFalse(WatchFeed.apply(pipe, sel, batch.copy(epochs = emptyList()), now, notBefore = 0))
     }
 
-    @Test fun motionSourcePrefersAFreshWatchThenFallsBackToThePhone() {
-        val s = 1_000_000L
-        assertEquals(MotionSource.WATCH, WatchFeed.chooseMotionSource(s + 100_000, s, 0))
-        assertEquals(MotionSource.PHONE, WatchFeed.chooseMotionSource(s + 300_000, s, 0))
-        assertEquals(MotionSource.WATCH, WatchFeed.chooseMotionSource(s + 500_000, s, s + 450_000))
-        assertEquals(MotionSource.PHONE, WatchFeed.chooseMotionSource(s + 700_000, s, s + 450_000))
-        assertEquals(MotionSource.WATCH, WatchFeed.chooseMotionSource(s + 710_000, s, s + 705_000))
+    @Test fun staleWatchActivityIsKeptOutButHeartRateStillCounts() {
+        val seen = ArrayList<Epoch>()
+        val pipe = Pipeline(T0, T0 + 100 * EPOCH_MS, stager = { e -> seen += e; EpochResult(e.start, Stage.LIGHT, 0.7) })
+        val sel = SourceSelector(T0, watchEnabled = true)
+        // The watch never delivered; after the grace period the phone is the source.
+        val late = T0 + EngineConfig.WATCH_GRACE_MS + 10 * EPOCH_MS
+        assertEquals(EpochSource.PHONE, sel.source(late))
+        val batch = WatchBatch("s", 1, 0, listOf(WatchEpoch(late - EPOCH_MS - 10_000, 0.5, 100)), listOf(HrSample(late - 40_000, 58.0)))
+        assertFalse(WatchFeed.apply(pipe, sel, batch, late, notBefore = 0))
+        pipe.ingestMotion(still(late + 60_000))
+        pipe.tick(late + 5 * EPOCH_MS)
+        assertTrue(seen.none { it.source == EpochSource.WATCH })
+        assertTrue(seen.any { it.hrSamples > 0 })
+        assertEquals(0, pipe.aggregator.crossSource)
+    }
+
+    @Test fun anEpochKeepsOneMotionSourceAndTheOtherIsRefusedAndCounted() {
+        val a = EpochAggregator()
+        a.ingestActivity(ActivitySample(T0 + 5_000, 0.02, 100))
+        a.ingestMotion(still(T0 + 6_000))
+        a.ingestMotion(MotionSample(T0 + 7_000, 3.0, 0.0, 9.81))
+        assertEquals(2, a.crossSource)
+        val e = a.advance(T0 + 40_000).single()
+        assertEquals(EpochSource.WATCH, e.source)
+        assertEquals(100, e.motionSamples)
+        assertEquals(0.02, e.activity, 1e-12)
+        // Gaps and heart-rate-only epochs have no source.
+        val b = EpochAggregator()
+        val out = b.ingestHr(HrSample(T0 + 1000, 60.0)) + b.advance(T0 + 4 * EPOCH_MS)
+        assertTrue(out.all { it.source == null })
+    }
+
+    @Test fun wristEpochsUseTheWristThresholds() {
+        // Same activity, same history; only the source differs. With equal thresholds the labels are equal.
+        fun stage(src: EpochSource) = Stager().process(Epoch(T0, 0.05, null, null, 100, 0, src)).stage
+        assertEquals(stage(EpochSource.PHONE), stage(EpochSource.WATCH))
+        assertEquals(Stage.WAKE, stage(EpochSource.WATCH))
+        assertEquals(EngineConfig.WAKE_THRESHOLD, EngineConfig.WAKE_THRESHOLD_WATCH, 0.0)
+        assertEquals(EngineConfig.STILL_ACTIVITY, EngineConfig.STILL_ACTIVITY_WATCH, 0.0)
     }
 
     @Test fun validateWindowThrowsTypedError() {

@@ -9,9 +9,10 @@ import { EPOCH_MS } from '../../src/engine/config';
 import { EpochAggregator } from '../../src/engine/epochs';
 import { Pipeline } from '../../src/engine/pipeline';
 import type { AlarmDecision } from '../../src/engine/smartAlarm';
+import { SourceSelector } from '../../src/engine/sourceSelector';
 import { Stager } from '../../src/engine/stager';
+import { applyWatchBatch } from '../../src/engine/watchFeed';
 import type { Epoch, EpochResult } from '../../src/engine/types';
-import { WATCH_FRESH_MS, WATCH_GRACE_MS, WATCH_SHIFT_MS } from '../../src/native/watch';
 import { generateNight, type SyntheticNight } from '../../src/sim/syntheticNight';
 
 /**
@@ -31,7 +32,8 @@ const TICK_MS = 5_000;
 /** Inputs are rounded before the reference run, so JS and Kotlin consume the identical numbers. */
 const round5 = (x: number) => Math.round(x * 1e5) / 1e5;
 
-type Source = 'phone' | 'watch';
+/** phone: no watch. watch: watch only. mixed: phone sensor all night plus a watch that goes silent for a while. */
+type Source = 'phone' | 'watch' | 'mixed';
 
 interface CaseDef {
   name: string;
@@ -43,6 +45,8 @@ interface CaseDef {
   windowStartMin: number;
   windowEndMin: number;
   dropoutFromMin?: number;
+  /** mixed only: the watch delivers nothing from this minute to that one. */
+  watchGapMin?: [number, number];
   expectReason: 'smart' | 'fallback';
 }
 
@@ -51,6 +55,7 @@ const CASES: CaseDef[] = [
   { name: 'phone-motion-only-smart', description: 'Phone motion without heart rate (HR-less stager rules).', seed: 5, source: 'phone', hr: false, durationMin: 150, windowStartMin: 100, windowEndMin: 130, expectReason: 'smart' },
   { name: 'phone-dropout-fallback', description: 'Both sensors go silent mid-night; only the window-end fallback can fire.', seed: 3, source: 'phone', hr: true, durationMin: 150, windowStartMin: 100, windowEndMin: 130, dropoutFromMin: 60, expectReason: 'fallback' },
   { name: 'watch-hr-smart', description: 'Watch epochs (activity plus heart rate) delivered in batches with the 60 s shift.', seed: 21, source: 'watch', hr: true, durationMin: 150, windowStartMin: 100, windowEndMin: 130, expectReason: 'smart' },
+  { name: 'watch-stale-phone-watch', description: 'Watch first: the watch is silent from minute 40 to 70, the phone sensor covers the gap after the staleness timeout, and the watch takes over again after the recovery hysteresis. Phone motion is recorded all night but only used while the watch is stale.', seed: 21, source: 'mixed', hr: true, durationMin: 150, windowStartMin: 100, windowEndMin: 130, watchGapMin: [40, 70], expectReason: 'smart' },
 ];
 
 interface WatchBatchFx {
@@ -68,19 +73,21 @@ interface Fixture {
   windowEnd: number;
   tickMs: number;
   source: Source;
+  /** Whether the night asked for the watch (sets up the source selector). */
+  useWatch: boolean;
   /** Flat [t - startMs, ax, ay, az, ...]. */
   motion: number[];
   /** Flat [t - startMs, bpm, ...]. */
   hr: number[];
   watchBatches: WatchBatchFx[];
   expected: {
-    epochs: Array<{ start: number; stage: string; confidence: number; activity: number | null; hrMean: number | null }>;
+    epochs: Array<{ start: number; stage: string; confidence: number; activity: number | null; hrMean: number | null; source: string | null }>;
     decision: { reason: string; at: number; stage: string };
   };
 }
 
 /** The same loop as src/sim/replay.ts, extended with watch batches, so the fixture records what production does. */
-function runReference(f: Pick<Fixture, 'startMs' | 'windowStart' | 'windowEnd' | 'tickMs' | 'motion' | 'hr' | 'watchBatches'>) {
+function runReference(f: Pick<Fixture, 'startMs' | 'windowStart' | 'windowEnd' | 'tickMs' | 'motion' | 'hr' | 'watchBatches' | 'useWatch'>) {
   let now = f.startMs;
   const stager = new Stager();
   const inputs: Epoch[] = [];
@@ -95,6 +102,7 @@ function runReference(f: Pick<Fixture, 'startMs' | 'windowStart' | 'windowEnd' |
       },
     },
   });
+  const selector = new SourceSelector({ startedAt: f.startMs, watchEnabled: f.useWatch });
   let mi = 0;
   let hi = 0;
   let bi = 0;
@@ -108,18 +116,24 @@ function runReference(f: Pick<Fixture, 'startMs' | 'windowStart' | 'windowEnd' |
       const hOk = hT <= t;
       if (!mOk && !hOk) break;
       if (mOk && (!hOk || mT <= hT)) {
-        pipe.ingestMotion({ t: mT, ax: f.motion[mi + 1] as number, ay: f.motion[mi + 2] as number, az: f.motion[mi + 3] as number });
+        // Phone motion is consumed either way but only used while the phone is the motion source.
+        if (selector.source(t) === 'phone') pipe.ingestMotion({ t: mT, ax: f.motion[mi + 1] as number, ay: f.motion[mi + 2] as number, az: f.motion[mi + 3] as number });
         mi += 4;
       } else {
         pipe.ingestHr({ t: hT, bpm: f.hr[hi + 1] as number });
         hi += 2;
       }
     }
-    // Watch batches, as watch.ts follow() takes them: shift every time, activity before heart rate.
+    // Watch batches through the shared feed: source selection, shift, activity before heart rate.
     while (bi < f.watchBatches.length && (f.watchBatches[bi] as WatchBatchFx).arrival <= t) {
       const b = f.watchBatches[bi++] as WatchBatchFx;
-      for (const [s, act, n] of b.epochs) pipe.ingestActivity({ t: s + WATCH_SHIFT_MS, activity: act, samples: n });
-      for (const [ht, bpm] of b.hr) pipe.ingestHr({ t: ht + WATCH_SHIFT_MS, bpm });
+      applyWatchBatch(
+        pipe,
+        selector,
+        { epochs: b.epochs.map(([start, activity, samples]) => ({ start, activity, samples })), hr: b.hr.map(([ht, bpm]) => ({ t: ht, bpm })) },
+        t,
+        -Infinity,
+      );
     }
     decision = pipe.tick(t);
     if (t >= f.windowEnd) break;
@@ -159,7 +173,8 @@ function build(def: CaseDef): Fixture {
   let watchBatches: WatchBatchFx[] = [];
   let phoneMotion = motion;
   let phoneHr = hr;
-  if (def.source === 'watch') {
+  const watchGap = def.watchGapMin ? ([startMs + def.watchGapMin[0] * MIN, startMs + def.watchGapMin[1] * MIN] as const) : null;
+  if (def.source !== 'phone') {
     // What the watch would send: activity per epoch computed like the phone aggregator, heart rate per epoch.
     const agg = new EpochAggregator();
     const closed: Epoch[] = [];
@@ -169,6 +184,7 @@ function build(def: CaseDef): Fixture {
     closed.push(...agg.advance(startMs + (def.durationMin + 2) * MIN));
     watchBatches = closed
       .filter((e) => Number.isFinite(e.activity))
+      .filter((e) => !watchGap || e.start < watchGap[0] || e.start >= watchGap[1])
       .map((e) => ({
         // The watch closes an epoch with its next sensor event, sends, Bluetooth adds a moment.
         arrival: e.start + EPOCH_MS + 15_000,
@@ -180,11 +196,12 @@ function build(def: CaseDef): Fixture {
       const b = watchBatches.find((x) => x.epochs[0]?.[0] === Math.floor(t / EPOCH_MS) * EPOCH_MS);
       b?.hr.push([t, hr[i + 1] as number]);
     }
-    phoneMotion = [];
+    // 'watch': nothing from the phone. 'mixed': the phone sensor runs all night, the selector decides when it counts.
+    if (def.source === 'watch') phoneMotion = [];
     phoneHr = [];
   }
 
-  const input = { ...base, motion: phoneMotion, hr: phoneHr, watchBatches };
+  const input = { ...base, useWatch: def.source !== 'phone', motion: phoneMotion, hr: phoneHr, watchBatches };
   const ref = runReference(input);
   expect(ref.results.length).toBe(ref.inputs.length);
   return {
@@ -192,6 +209,7 @@ function build(def: CaseDef): Fixture {
     description: def.description + ' Synthetic, seeded; inputs rounded to 5 decimals.',
     ...base,
     source: def.source,
+    useWatch: def.source !== 'phone',
     motion: phoneMotion,
     hr: phoneHr,
     watchBatches,
@@ -204,6 +222,7 @@ function build(def: CaseDef): Fixture {
           confidence: r.confidence,
           activity: Number.isFinite(e.activity) ? e.activity : null,
           hrMean: e.hrMean,
+          source: e.source ?? null,
         };
       }),
       decision: { reason: ref.decision.reason, at: ref.decision.at, stage: ref.decision.stageAtTrigger },
@@ -219,6 +238,15 @@ describe('engine parity fixtures (shared with the Kotlin engine)', () => {
       // The case is only a useful parity check if it exercises the intended branch.
       expect(fx.expected.decision.reason).toBe(def.expectReason);
       expect(fx.expected.epochs.length).toBeGreaterThan(60);
+      // Never a repeated or skipped epoch, whatever the sources did.
+      fx.expected.epochs.forEach((e, i) => {
+        if (i > 0) expect(e.start - (fx.expected.epochs[i - 1] as { start: number }).start).toBe(EPOCH_MS);
+      });
+      if (def.source === 'mixed') {
+        // watch, gap epochs (unknown) until the staleness timeout, phone, then the watch again (its data is shifted ahead of the phone's).
+        const seq = fx.expected.epochs.map((e) => e.source ?? 'none').filter((v, i, a) => i === 0 || v !== a[i - 1]);
+        expect(seq).toEqual(['watch', 'none', 'phone', 'watch']);
+      }
       if (UPDATE) {
         mkdirSync(DIR, { recursive: true });
         writeFileSync(path, JSON.stringify(fx) + '\n');
@@ -237,13 +265,11 @@ function configFixture() {
   const names = [
     'EPOCH_MS', 'REORDER_GRACE_MS', 'GRAVITY_TAU_MS', 'MAX_GAP_EPOCHS', 'MIN_HR_SAMPLES_FOR_SD', 'CK_WEIGHTS', 'WAKE_THRESHOLD',
     'STILL_ACTIVITY', 'DEEP_STILL_EPOCHS', 'BASELINE_MIN_HR_EPOCHS', 'DEEP_HR_MARGIN_BPM', 'DEEP_SD_RATIO', 'REM_SD_RATIO',
-    'REM_STILL_EPOCHS', 'MIN_WINDOW_MS', 'MAX_WINDOW_MS', 'LIGHT_RUN_EPOCHS', 'DEEP_COOLDOWN_EPOCHS', 'FRESH_EPOCHS', 'SMART_MIN_CONFIDENCE',
+    'REM_STILL_EPOCHS', 'WAKE_THRESHOLD_WATCH', 'STILL_ACTIVITY_WATCH', 'WATCH_SHIFT_MS', 'WATCH_FRESH_MS', 'WATCH_GRACE_MS',
+    'WATCH_RECOVER_EPOCHS', 'WATCH_RECOVER_MS', 'MIN_WINDOW_MS', 'MAX_WINDOW_MS', 'LIGHT_RUN_EPOCHS', 'DEEP_COOLDOWN_EPOCHS', 'FRESH_EPOCHS', 'SMART_MIN_CONFIDENCE',
   ];
   const out: Record<string, number | readonly number[]> = {};
   for (const n of names) out[n] = c[n] as number | readonly number[];
-  out.WATCH_SHIFT_MS = WATCH_SHIFT_MS;
-  out.WATCH_FRESH_MS = WATCH_FRESH_MS;
-  out.WATCH_GRACE_MS = WATCH_GRACE_MS;
   return out;
 }
 

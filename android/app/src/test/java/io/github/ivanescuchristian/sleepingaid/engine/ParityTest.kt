@@ -11,7 +11,7 @@ import org.junit.Test
  * Runs the shared synthetic nights (tests/fixtures/engine-parity, written by the JavaScript engine's test suite)
  * through the Kotlin engine and demands the same stages and the same wake decision. The replay loop is the one
  * of the JS fixture generator: samples merged by time up to each 5 s tick, motion before heart rate on ties,
- * watch batches applied with the 60 s shift, then pipeline.tick(t), stopping at the first decision.
+ * phone motion gated by the SourceSelector, watch batches applied through WatchFeed (selector, 60 s shift), then pipeline.tick(t), stopping at the first decision.
  *
  * Stages and the decision (reason, time, stage) must match exactly. Floating values only need to agree to 1e-9:
  * V8 and the JVM may round the last bit of hypot/exp differently.
@@ -39,6 +39,7 @@ class ParityTest {
 
         val inputs = ArrayList<Epoch>()
         val stager = Stager()
+        val selector = SourceSelector(startMs, fx["useWatch"] as Boolean)
         val pipe = Pipeline(windowStart, windowEnd, stager = { e -> inputs.add(e); stager.process(e) })
 
         var mi = 0
@@ -56,7 +57,8 @@ class ParityTest {
                 val hOk = hT <= t
                 if (!mOk && !hOk) break
                 if (mOk && (!hOk || mT <= hT)) {
-                    pipe.ingestMotion(MotionSample(mT, motion[mi + 1], motion[mi + 2], motion[mi + 3]))
+                    // Phone motion is consumed either way but only used while the phone is the motion source.
+                    if (selector.source(t) == EpochSource.PHONE) pipe.ingestMotion(MotionSample(mT, motion[mi + 1], motion[mi + 2], motion[mi + 3]))
                     mi += 4
                 } else {
                     pipe.ingestHr(HrSample(hT, hr[hi + 1]))
@@ -67,7 +69,7 @@ class ParityTest {
                 val b = batches[bi++]
                 val epochs = (b["epochs"] as List<List<Double>>).map { WatchEpoch(it[0].toLong(), it[1], it[2].toInt()) }
                 val hrs = (b["hr"] as List<List<Double>>).map { HrSample(it[0].toLong(), it[1]) }
-                WatchFeed.apply(pipe, WatchBatch("fixture", bi.toLong(), 0, epochs, hrs), notBefore = Long.MIN_VALUE)
+                WatchFeed.apply(pipe, selector, WatchBatch("fixture", bi.toLong(), 0, epochs, hrs), t, notBefore = Long.MIN_VALUE)
             }
             decision = pipe.tick(t)
             if (t >= windowEnd) break
@@ -88,6 +90,7 @@ class ParityTest {
             val hm = want["hrMean"] as Double?
             val gotHm = inputs[k].hrMean
             if (hm == null) assertEquals(null, gotHm) else assertEquals("$name epoch $k hrMean", hm, gotHm!!, 1e-9)
+            assertEquals("$name epoch $k source", want["source"], inputs[k].source?.wire)
         }
         val d = expected["decision"] as Map<String, Any?>
         assertNotNull("$name: a decision must exist", decision)
@@ -103,4 +106,6 @@ class ParityTest {
     @Test fun phoneDropoutFallback() = check("phone-dropout-fallback")
 
     @Test fun watchHrSmart() = check("watch-hr-smart")
+
+    @Test fun watchStalePhoneWatch() = check("watch-stale-phone-watch")
 }

@@ -16,6 +16,17 @@ enum class Stage(val wire: String) {
     }
 }
 
+/** Device that supplied the motion of an epoch (src/engine/types.ts EpochSource). Null on an epoch without motion. */
+enum class EpochSource(val wire: String) {
+    WATCH("watch"),
+    PHONE("phone"),
+    ;
+
+    companion object {
+        fun fromWire(s: String): EpochSource? = entries.firstOrNull { it.wire == s }
+    }
+}
+
 /** Accelerometer reading in m/s^2 including gravity; [t] is epoch milliseconds. */
 data class MotionSample(val t: Long, val ax: Double, val ay: Double, val az: Double)
 
@@ -33,6 +44,8 @@ data class Epoch(
     val hrSd: Double?,
     val motionSamples: Int,
     val hrSamples: Int,
+    /** Where the motion came from; one device per epoch, null for a gap. Old persisted epochs have none. */
+    val source: EpochSource? = null,
 )
 
 /** Stager output for one epoch. [confidence] is 0..1. */

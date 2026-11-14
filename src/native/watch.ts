@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Strict-1.0.0
 // Copyright (c) 2026 Christian Ivanescu. See LICENSE for terms (source-available; not open source).
-import { EPOCH_MS } from '../engine/config';
+import { EPOCH_MS, WATCH_FRESH_MS, WATCH_GRACE_MS, WATCH_RECOVER_EPOCHS, WATCH_RECOVER_MS, WATCH_SHIFT_MS } from '../engine/config';
+import { SourceSelector } from '../engine/sourceSelector';
 import type { ActivitySample } from '../engine/types';
 import { isNativeAndroid, SleepAidNative, type SleepAidNativePlugin, type WatchStatus } from './plugin';
 
@@ -15,23 +16,9 @@ import { isNativeAndroid, SleepAidNative, type SleepAidNativePlugin, type WatchS
  */
 export const WATCH_SCHEMA = 1;
 
-/**
- * Watch data reaches the phone after its epoch ended: the watch closes an epoch with its next sensor event
- * (the sensor hub may hold events for ~10 s), sends, and Bluetooth adds a moment. The stager closes an epoch
- * about 2 s after its end on the phone clock, so unshifted watch data would arrive in epochs that are already
- * closed and be discarded. Every watch timestamp is therefore moved WATCH_SHIFT_MS later (a multiple of the
- * epoch length, so epoch boundaries stay aligned) before it enters the pipeline.
- *
- * Costs: the hypnogram and summary times are WATCH_SHIFT_MS late; a smart wake decision sees data that is at
- * least that much older than with the phone sensor; data delayed by more than the shift (an unreachable watch)
- * is still dropped by the stager, though the phone also stores it and the alarm window never depends on it.
- */
-export const WATCH_SHIFT_MS = 2 * EPOCH_MS;
-
-/** The watch counts as the live motion source while its last activity epoch arrived less than this long ago. */
-export const WATCH_FRESH_MS = 150_000;
-/** After a night starts the watch gets this long to deliver its first epoch before the phone sensor takes over. */
-export const WATCH_GRACE_MS = 240_000;
+// The timing constants (shift, staleness timeout, grace, recovery hysteresis) live with the engine
+// (src/engine/config.ts) because the source selector is part of it; re-exported for existing importers.
+export { WATCH_FRESH_MS, WATCH_GRACE_MS, WATCH_RECOVER_EPOCHS, WATCH_RECOVER_MS, WATCH_SHIFT_MS };
 
 export interface WatchEpoch {
   /** Epoch start on the watch clock (not shifted). */
@@ -103,14 +90,6 @@ export class WatchDedup {
   }
 }
 
-export type MotionSource = 'watch' | 'phone';
-
-/** Which sensor should feed motion now. The two must never run together: both add to the same epoch accumulator. */
-export function chooseMotionSource(o: { now: number; startedAt: number; lastActivityAt: number }): MotionSource {
-  if (o.lastActivityAt > 0) return o.now - o.lastActivityAt < WATCH_FRESH_MS ? 'watch' : 'phone';
-  return o.now - o.startedAt < WATCH_GRACE_MS ? 'watch' : 'phone';
-}
-
 export interface FollowOptions {
   /** Batches (and samples) older than this are ignored: leftovers of an earlier night. */
   notBefore: number;
@@ -119,10 +98,14 @@ export interface FollowOptions {
   /** One heart-rate sample, time already shifted; `receivedAt` is the phone clock at arrival. */
   onHr: (bpm: number, t: number, receivedAt: number) => void;
   now?: () => number;
+  /** Night start, for the watch grace period. Defaults to `notBefore`. */
+  startedAt?: number;
+  /** Source gating shared with the caller; one is created when absent. Wrist activity passes only while it says 'watch'. */
+  selector?: SourceSelector;
 }
 
 export interface WatchFollower {
-  /** Phone clock of the last batch with activity; 0 before the first. */
+  /** Phone clock of the last batch whose activity was admitted (watch was the source); 0 before the first. */
   lastActivityAt(): number;
   /** Phone clock of the last batch of any kind; 0 before the first. */
   lastBatchAt(): number;
@@ -191,6 +174,7 @@ export function createWatchLink(plugin: SleepAidNativePlugin, isNative: () => bo
     follow(o: FollowOptions): WatchFollower {
       const now = o.now ?? Date.now;
       const dedup = new WatchDedup();
+      const selector = o.selector ?? new SourceSelector({ startedAt: o.startedAt ?? o.notBefore, watchEnabled: true });
       let lastActivityAt = 0;
       let lastBatchAt = 0;
       let stopped = false;
@@ -201,10 +185,12 @@ export function createWatchLink(plugin: SleepAidNativePlugin, isNative: () => bo
         lastBatchAt = at;
         const epochs = b.epochs.filter((e) => e.start >= o.notBefore);
         const hr = b.hr.filter((p) => p.t >= o.notBefore);
-        if (epochs.length) lastActivityAt = at;
+        selector.onWatchEpochs(at, epochs.map((e) => e.start));
+        const admit = selector.source(at) === 'watch';
+        if (admit && epochs.length) lastActivityAt = at;
         // Activity first: the stager closes an epoch as soon as it sees a later sample, so the epoch's activity
-        // has to be in before any heart-rate sample that comes after it.
-        for (const e of epochs) o.onEpoch({ t: e.start + WATCH_SHIFT_MS, activity: e.activity, samples: e.samples });
+        // has to be in before any heart-rate sample that comes after it. Heart rate is never gated (no phone twin).
+        if (admit) for (const e of epochs) o.onEpoch({ t: e.start + WATCH_SHIFT_MS, activity: e.activity, samples: e.samples });
         for (const p of hr) o.onHr(p.bpm, p.t + WATCH_SHIFT_MS, at);
       };
       const takeJson = (json: string) => {

@@ -19,6 +19,9 @@ class EpochAggregator(private val epochMs: Long = EngineConfig.EPOCH_MS) {
         var hrN = 0
         var hrMean = 0.0
         var hrM2 = 0.0
+
+        /** Device that supplied this epoch's motion; the first one to deliver owns the epoch. */
+        var source: EpochSource? = null
     }
 
     private val open = HashMap<Long, Acc>()
@@ -33,6 +36,10 @@ class EpochAggregator(private val epochMs: Long = EngineConfig.EPOCH_MS) {
 
     /** Samples dropped because their epoch had already been emitted. */
     var late = 0
+        private set
+
+    /** Motion refused because the epoch already belongs to the other device (would double-count the same minutes). */
+    var crossSource = 0
         private set
 
     fun ingestMotion(s: MotionSample): List<Epoch> {
@@ -58,6 +65,7 @@ class EpochAggregator(private val epochMs: Long = EngineConfig.EPOCH_MS) {
         }
         lastMotionT = max(lastMotionT, s.t)
         val acc = acc(start)
+        if (!claim(acc, EpochSource.PHONE)) return touch(s.t)
         acc.devSum += dev
         acc.motionN++
         return touch(s.t)
@@ -75,6 +83,7 @@ class EpochAggregator(private val epochMs: Long = EngineConfig.EPOCH_MS) {
             return emptyList()
         }
         val acc = acc(start)
+        if (!claim(acc, EpochSource.WATCH)) return touch(a.t)
         acc.devSum += a.activity * a.samples
         acc.motionN += a.samples
         return touch(a.t)
@@ -111,6 +120,17 @@ class EpochAggregator(private val epochMs: Long = EngineConfig.EPOCH_MS) {
         open.clear()
     }
 
+    /** An epoch's motion comes from one device only; the other one is refused and counted. */
+    private fun claim(acc: Acc, source: EpochSource): Boolean {
+        val owner = acc.source
+        if (owner != null && owner != source) {
+            crossSource++
+            return false
+        }
+        acc.source = source
+        return true
+    }
+
     private fun touch(t: Long): List<Epoch> {
         if (t > maxT) maxT = t
         return drain(maxT)
@@ -144,7 +164,7 @@ class EpochAggregator(private val epochMs: Long = EngineConfig.EPOCH_MS) {
     }
 
     private fun emit(start: Long): Epoch {
-        val a = open[start] ?: return Epoch(start, Double.NaN, null, null, 0, 0)
+        val a = open[start] ?: return Epoch(start, Double.NaN, null, null, 0, 0, null)
         return Epoch(
             start = start,
             activity = if (a.motionN > 0) a.devSum / a.motionN else Double.NaN,
@@ -152,6 +172,7 @@ class EpochAggregator(private val epochMs: Long = EngineConfig.EPOCH_MS) {
             hrSd = if (a.hrN >= EngineConfig.MIN_HR_SAMPLES_FOR_SD) sqrt(a.hrM2 / a.hrN) else null,
             motionSamples = a.motionN,
             hrSamples = a.hrN,
+            source = if (a.motionN > 0) a.source else null,
         )
     }
 }

@@ -9,7 +9,9 @@ import {
   REM_SD_RATIO,
   REM_STILL_EPOCHS,
   STILL_ACTIVITY,
+  STILL_ACTIVITY_WATCH,
   WAKE_THRESHOLD,
+  WAKE_THRESHOLD_WATCH,
 } from './config';
 import type { Epoch, EpochResult } from './types';
 
@@ -61,11 +63,14 @@ export class Stager {
     }
 
     const weighted = this.weightedActivity();
-    const still = e.activity < STILL_ACTIVITY;
+    // Wrist and mattress move differently, so each source has its own thresholds (equal until wrist data exists).
+    const watch = e.source === 'watch';
+    const wakeThreshold = watch ? WAKE_THRESHOLD_WATCH : WAKE_THRESHOLD;
+    const still = e.activity < (watch ? STILL_ACTIVITY_WATCH : STILL_ACTIVITY);
     this.stillRun = still ? this.stillRun + 1 : 0;
 
-    if (weighted >= WAKE_THRESHOLD) {
-      return { start: e.start, stage: 'wake', confidence: clamp01(0.55 + 0.45 * Math.min(1, weighted / (4 * WAKE_THRESHOLD))) };
+    if (weighted >= wakeThreshold) {
+      return { start: e.start, stage: 'wake', confidence: clamp01(0.55 + 0.45 * Math.min(1, weighted / (4 * wakeThreshold))) };
     }
 
     const useHr = hrOk && this.hrMeans.count >= BASELINE_MIN_HR_EPOCHS;

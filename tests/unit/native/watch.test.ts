@@ -11,7 +11,6 @@ import type { SleepAidNativePlugin } from '../../../src/native/plugin';
 import {
   WATCH_SHIFT_MS,
   WatchDedup,
-  chooseMotionSource,
   createWatchLink,
   decodeWatchBatch,
   type WatchBatch,
@@ -70,19 +69,6 @@ describe('WatchDedup', () => {
     d.accept({ session: 'b', seq: 1 });
     d.accept({ session: 'c', seq: 1 });
     expect(d.accept({ session: 'a', seq: 1 })).toBe(true); // forgotten, harmless: the stager drops old epochs
-  });
-});
-
-describe('chooseMotionSource', () => {
-  const startedAt = 1_000_000;
-  it('waits for the watch during the grace period, then falls back to the phone', () => {
-    expect(chooseMotionSource({ now: startedAt + 100_000, startedAt, lastActivityAt: 0 })).toBe('watch');
-    expect(chooseMotionSource({ now: startedAt + 300_000, startedAt, lastActivityAt: 0 })).toBe('phone');
-  });
-  it('uses the watch while fresh and returns to it when it recovers', () => {
-    expect(chooseMotionSource({ now: startedAt + 500_000, startedAt, lastActivityAt: startedAt + 450_000 })).toBe('watch');
-    expect(chooseMotionSource({ now: startedAt + 700_000, startedAt, lastActivityAt: startedAt + 450_000 })).toBe('phone');
-    expect(chooseMotionSource({ now: startedAt + 710_000, startedAt, lastActivityAt: startedAt + 705_000 })).toBe('watch');
   });
 });
 

@@ -63,6 +63,15 @@
 - Watch batches are decoded and fed natively (the 60 s shift is kept so JS and Kotlin see the same timeline). Heart rate on the phone app comes from the watch only; the Web Bluetooth button is hidden there.
 - Emulator check (Android 35, synthetic accelerometer): smart wake fired at the window opening with the screen off, deep Doze forced and the task removed. Not verified on a real phone. Full results are summarised in checkpoint 7.
 
+## 2026-11-14 checkpoint 8: watch-first sensing (0.1.1)
+
+- Owner requirement: the Galaxy Watch4 Classic worn all night is the primary source; the phone accelerometer is only the fallback. New pure `SourceSelector` (TypeScript and Kotlin, parity-tested): staleness timeout 150 s, hysteresis of 3 consecutive fresh epochs over at least 60 s before returning to the watch, backlog and duplicate epochs never count as fresh, grace of 240 s at night start.
+- Never mixed: the unused source is dropped at the input, and the aggregator additionally gives each epoch to one source only (`source`, `crossSource`). Per-epoch source is persisted, returned to the app and summarised (share of the night per source). Heart rate is not gated: it exists only on the watch.
+- Source-specific wake and stillness thresholds for the wrist exist but equal the phone values (no recorded wrist night); documented as a limitation.
+- Setup screen lists the watch first, checked by default, phone on the mattress as the fallback; the night status shows Watch or Phone fallback. New parity fixture: watch, silent gap, phone, watch again. Docs: watch setup is now the primary path.
+- Version 0.1.1. Alarm path untouched; the window-end backup is unchanged.
+- Not verified on real hardware: everything about the watch, as before.
+
 ## 2026-11-14 checkpoint 7: v0.1.0 MVP released
 
 - Release: https://github.com/IvanescuChristian/Sleeping_Aid/releases/tag/v0.1.0 (published, not a prerelease). Assets: `SleepingAid-0.1.0-phone-mvp-debugsigned.apk`, `SleepingAid-0.1.0-watch-mvp-debugsigned.apk`, `SHA256SUMS.txt`.

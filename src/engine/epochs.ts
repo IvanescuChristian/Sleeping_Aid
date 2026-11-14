@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Strict-1.0.0
 // Copyright (c) 2026 Christian Ivanescu. See LICENSE for terms (source-available; not open source).
 import { EPOCH_MS, GRAVITY_TAU_MS, MAX_GAP_EPOCHS, MIN_HR_SAMPLES_FOR_SD, REORDER_GRACE_MS } from './config';
-import type { ActivitySample, Epoch, HrSample, MotionSample } from './types';
+import type { ActivitySample, Epoch, EpochSource, HrSample, MotionSample } from './types';
 
 interface Acc {
   devSum: number;
@@ -9,6 +9,8 @@ interface Acc {
   hrN: number;
   hrMean: number;
   hrM2: number;
+  /** Device that supplied this epoch's motion; the first one to deliver owns the epoch. */
+  source: EpochSource | null;
 }
 
 /**
@@ -26,6 +28,8 @@ export class EpochAggregator {
   rejected = 0;
   /** Samples dropped because their epoch had already been emitted. */
   late = 0;
+  /** Motion refused because the epoch already belongs to the other device (would double-count the same minutes). */
+  crossSource = 0;
 
   constructor(private readonly epochMs: number = EPOCH_MS) {}
 
@@ -51,6 +55,7 @@ export class EpochAggregator {
     }
     this.lastMotionT = Math.max(this.lastMotionT, s.t);
     const acc = this.acc(start);
+    if (!this.claim(acc, 'phone')) return this.touch(s.t);
     acc.devSum += dev;
     acc.motionN++;
     return this.touch(s.t);
@@ -72,6 +77,7 @@ export class EpochAggregator {
       return [];
     }
     const acc = this.acc(start);
+    if (!this.claim(acc, 'watch')) return this.touch(a.t);
     acc.devSum += a.activity * a.samples;
     acc.motionN += a.samples;
     return this.touch(a.t);
@@ -101,6 +107,16 @@ export class EpochAggregator {
     return this.touch(nowMs);
   }
 
+  /** An epoch's motion comes from one device only; the other one is refused and counted. */
+  private claim(acc: Acc, source: EpochSource): boolean {
+    if (acc.source !== null && acc.source !== source) {
+      this.crossSource++;
+      return false;
+    }
+    acc.source = source;
+    return true;
+  }
+
   private touch(t: number): Epoch[] {
     if (t > this.maxT) this.maxT = t;
     return this.drain(this.maxT);
@@ -118,7 +134,7 @@ export class EpochAggregator {
     if (this.nextEmit === null) this.nextEmit = start;
     let a = this.open.get(start);
     if (!a) {
-      a = { devSum: 0, motionN: 0, hrN: 0, hrMean: 0, hrM2: 0 };
+      a = { devSum: 0, motionN: 0, hrN: 0, hrMean: 0, hrM2: 0, source: null };
       this.open.set(start, a);
     }
     return a;
@@ -142,7 +158,7 @@ export class EpochAggregator {
 
   private emit(start: number): Epoch {
     const a = this.open.get(start);
-    if (!a) return { start, activity: NaN, hrMean: null, hrSd: null, motionSamples: 0, hrSamples: 0 };
+    if (!a) return { start, activity: NaN, hrMean: null, hrSd: null, motionSamples: 0, hrSamples: 0, source: null };
     return {
       start,
       activity: a.motionN > 0 ? a.devSum / a.motionN : NaN,
@@ -150,6 +166,7 @@ export class EpochAggregator {
       hrSd: a.hrN >= MIN_HR_SAMPLES_FOR_SD ? Math.sqrt(a.hrM2 / a.hrN) : null,
       motionSamples: a.motionN,
       hrSamples: a.hrN,
+      source: a.motionN > 0 ? a.source : null,
     };
   }
 }

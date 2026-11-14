@@ -2,7 +2,7 @@
 
 ## State
 
-Version 0.1.0: engine, simulation, a vanilla TypeScript PWA, an Android phone app with a native hard alarm (Capacitor) and a Wear OS watch companion (see ARCHITECTURE.md). No web framework; the app builds to `dist/` with Vite. Android APKs come from `scripts/build-android.sh`; CI is `.github/workflows/android.yml`. v0.1.0 is released (debug-signed MVP, phone and watch APKs plus SHA256SUMS.txt): https://github.com/IvanescuChristian/Sleeping_Aid/releases/tag/v0.1.0. It is verified on Android 15 and Wear OS 5 emulators only; the real-hardware list below is still open.
+Version 0.1.1: engine, simulation, a vanilla TypeScript PWA, an Android phone app with a native hard alarm (Capacitor) and a Wear OS watch companion (see ARCHITECTURE.md). No web framework; the app builds to `dist/` with Vite. Android APKs come from `scripts/build-android.sh`; CI is `.github/workflows/android.yml`. v0.1.0 is released (debug-signed MVP, phone and watch APKs plus SHA256SUMS.txt): https://github.com/IvanescuChristian/Sleeping_Aid/releases/tag/v0.1.0; 0.1.1 (watch-first sensing) is prepared and not yet released. Source priority: the watch is the primary sensor, the phone accelerometer only the fallback (ARCHITECTURE.md, Source priority). It is verified on Android 15 and Wear OS 5 emulators only; the real-hardware list below is still open.
 
 ## How to run
 
@@ -38,13 +38,13 @@ Follow docs/NIGHT_TEST_CHECKLIST.md. In short:
 2. Reboot the phone with an armed alarm: it must still ring (boot re-arm, before first unlock).
 3. Full night on the charger, then off the charger: smart-wake time, JS liveness under Samsung One UI battery management, battery drain.
 4. Galaxy Watch4 Classic: install per docs/WATCH_SETUP.md, permissions, start from the phone, tap-to-start fallback, data lag, watch battery over a night, Samsung Health session display.
-5. Compare watch-based staging with the phone's and the watch's own stages; wrist thresholds are tuned for a phone on a mattress.
+5. Compare watch-based staging with the phone's and the watch's own stages; the wrist thresholds (`WAKE_THRESHOLD_WATCH`, `STILL_ACTIVITY_WATCH`) equal the phone-on-mattress values because no wrist night has been recorded yet. Also check watch-first behaviour: Watch shown all night, Phone fallback after ~2.5 min without the watch, back to Watch ~1.5 min after it returns, no gap or duplicate in the hypnogram.
 
 ## Open items
 
 - Release signing key decision (docs/SIGNING.md): the MVP release is debug-signed and says so in its notes; later generate a keystore before any update path is promised.
 - Model: the smart wake is native (Kotlin port of the JS engine, parity-tested on shared synthetic nights) and runs in the night foreground service with the screen off, the app swiped away or the process killed (sticky restart from persisted epochs). The exact backup alarm stays the guarantee. Verified on an Android 35 emulator with a synthetic accelerometer (screen off, deep Doze forced, task removed, process killed); not on a real phone. The wake-up-accelerometer path (no wake lock) could not be exercised on the emulator. Not covered: heart rate over Web Bluetooth on the phone app (the watch is the only HR source there); deep Doze on a phone without a wake-up sensor, unplugged and motionless.
-- Everything about the watch is untested on real hardware.
+- Everything about the watch is untested on real hardware, including the watch-first source switching (verified by JVM and Vitest tests and a synthetic parity night only).
 - Calibration of thresholds on real nights.
 
 ## Next steps

@@ -52,7 +52,7 @@ export interface NightStatus {
   pipelineErrors: number;
   demo: boolean;
   /** Native night only: where motion comes from. Absent on the web. */
-  motionSource?: 'phone' | 'watch' | 'watch-waiting' | 'none';
+  motionSource?: 'phone' | 'phone-fallback' | 'watch' | 'watch-waiting' | 'none';
 }
 
 export interface NightOptions {

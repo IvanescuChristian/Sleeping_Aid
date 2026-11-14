@@ -7,7 +7,7 @@ Status: the app is built, unit-tested and emulator-verified (not yet on a real p
 ## 1. Download
 
 1. On the phone, open the project's GitHub Releases page and pick the newest release.
-2. Download `SleepingAid-<version>-phone-mvp-debugsigned.apk` (the phone app). You do not need the `watch` file unless you also have a Wear OS watch (see WATCH_SETUP.md); if you do, install both from the same release.
+2. Download `SleepingAid-<version>-phone-mvp-debugsigned.apk` (the phone app), for example `SleepingAid-0.1.1-phone-mvp-debugsigned.apk`. The intended setup is phone plus a Wear OS watch worn all night, so also download the `watch` file and install it as described in WATCH_SETUP.md, from the same release. Without a watch the phone on the mattress is used instead.
 3. Also download `SHA256SUMS.txt`.
 
 ## 2. Check the download (recommended)
@@ -52,7 +52,7 @@ Samsung stops background apps aggressively. The hard alarm at the window end is 
 
 1. Run the 20-minute nap test from NIGHT_TEST_CHECKLIST.md before a real night.
 2. In the evening choose the wake window (for example 06:30 to 07:00) and tap Start night.
-3. Put the phone on the mattress next to you (on the charger is best) and let the screen turn off. Smart wake runs natively, with the screen off and the app closed. Keeping the screen on is an optional checkbox on the setup screen. Set your normal phone alarm as a backup for a little after the window end.
+3. Wear the watch to bed (see WATCH_SETUP.md); the setup screen should say the watch is connected, with "Use Wear OS watch" checked. Also put the phone on the mattress next to you (on the charger is best): it is the fallback if the watch goes silent. Let the screen turn off. Smart wake runs natively, with the screen off and the app closed. Keeping the screen on is an optional checkbox on the setup screen. Set your normal phone alarm as a backup for a little after the window end.
 4. In the morning the alarm rings at the first light-sleep moment in the window, or at the window end at the latest, with the screen off and the phone locked. After a reboot the backup alarm is re-armed and tracking restarts if Android allows it; otherwise tap the "Tap to resume night tracking" notification. Dismiss or snooze the alarm on the alarm screen; the night summary appears when you open the app.
 5. If you have not granted exact alarms, the app tells you it is not armed and refuses to start the night. That is intended.
 

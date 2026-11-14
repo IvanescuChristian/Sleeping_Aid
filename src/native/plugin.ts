@@ -60,8 +60,11 @@ export interface NightStatus {
   stage?: string;
   epochs?: number;
   lastEpochAt?: number;
-  /** 'watch-waiting': the watch is the source but has not delivered yet. */
-  motionSource?: 'phone' | 'watch' | 'watch-waiting' | 'none';
+  /**
+   * Where motion comes from now. 'watch-waiting': the watch is the source but has not delivered yet.
+   * 'phone': no watch wanted. 'phone-fallback': the watch was wanted but is silent or not yet trusted again.
+   */
+  motionSource?: 'phone' | 'phone-fallback' | 'watch' | 'watch-waiting' | 'none';
   motionHz?: number;
   hrBpm?: number;
   errors?: number;
@@ -75,6 +78,8 @@ export interface NightEpoch {
   start: number;
   stage: string;
   confidence: number;
+  /** Device that supplied the epoch's motion; absent for a gap. */
+  source?: 'watch' | 'phone';
 }
 
 /** Typed surface of the native `SleepAidNative` Capacitor plugin (android/app/src/main/java). */

@@ -4,6 +4,9 @@
 /** Estimated sleep stage. 'unknown' marks an epoch with no usable sensor data. */
 export type Stage = 'wake' | 'light' | 'deep' | 'rem' | 'unknown';
 
+/** Which device supplied the motion of an epoch. Null on an epoch without motion (a gap). */
+export type EpochSource = 'watch' | 'phone';
+
 /** Accelerometer reading in m/s^2 including gravity; t is epoch milliseconds. */
 export interface MotionSample {
   t: number;
@@ -35,6 +38,8 @@ export interface Epoch {
   hrSd: number | null;
   motionSamples: number;
   hrSamples: number;
+  /** Device the motion came from; never both within one epoch. Null when no motion arrived. Absent in old data. */
+  source?: EpochSource | null;
 }
 
 /** Stager output for one epoch. */
@@ -43,6 +48,8 @@ export interface EpochResult {
   stage: Stage;
   /** 0..1; how much the stager trusts the label. */
   confidence: number;
+  /** Motion source of the epoch (from the aggregator), kept for the summary and for debugging. */
+  source?: EpochSource | null;
 }
 
 export type Clock = () => number;

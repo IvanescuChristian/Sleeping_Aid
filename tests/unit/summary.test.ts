@@ -59,3 +59,12 @@ describe('summarizeNight', () => {
     expect(summarizeNight(build([['wake', 10]])).sleepOnsetLatencyMin).toBeNull();
   });
 });
+
+describe('sourceEpochs', () => {
+  it('counts epochs per motion source only when sources were recorded', () => {
+    const mk = (source: 'watch' | 'phone' | null | undefined, i: number) => ({ start: i * 30_000, stage: 'light' as const, confidence: 0.7, source });
+    const withSources = summarizeNight([mk('watch', 0), mk('watch', 1), mk('phone', 2), mk(null, 3)]);
+    expect(withSources.sourceEpochs).toEqual({ watch: 2, phone: 1, none: 1 });
+    expect('sourceEpochs' in summarizeNight([mk(undefined, 0), mk(undefined, 1)])).toBe(false);
+  });
+});

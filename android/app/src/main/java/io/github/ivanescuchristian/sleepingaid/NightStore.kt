@@ -5,6 +5,7 @@ package io.github.ivanescuchristian.sleepingaid
 import android.content.Context
 import io.github.ivanescuchristian.sleepingaid.engine.Epoch
 import io.github.ivanescuchristian.sleepingaid.engine.EpochResult
+import io.github.ivanescuchristian.sleepingaid.engine.EpochSource
 import io.github.ivanescuchristian.sleepingaid.engine.Stage
 import java.io.File
 
@@ -107,7 +108,10 @@ object NightStore {
 
     // ---------- Epochs ----------
 
-    /** One CSV line: start,stage,confidence,activity,hrMean,hrSd,motionSamples,hrSamples. Doubles round-trip exactly. */
+    /**
+     * One CSV line: start,stage,confidence,activity,hrMean,hrSd,motionSamples,hrSamples,source (watch, phone or
+     * empty). Doubles round-trip exactly. Lines of 0.1.0 have no source column and are still read.
+     */
     fun appendEpoch(ctx: Context, e: Epoch, r: EpochResult) = synchronized(lock) {
         val f = file(ctx)
         f.appendText(format(e, r) + "\n")
@@ -119,7 +123,7 @@ object NightStore {
     }
 
     internal fun format(e: Epoch, r: EpochResult): String =
-        "${e.start},${r.stage.wire},${r.confidence},${e.activity},${e.hrMean ?: ""},${e.hrSd ?: ""},${e.motionSamples},${e.hrSamples}"
+        "${e.start},${r.stage.wire},${r.confidence},${e.activity},${e.hrMean ?: ""},${e.hrSd ?: ""},${e.motionSamples},${e.hrSamples},${e.source?.wire ?: ""}"
 
     data class Stored(val epoch: Epoch, val result: EpochResult)
 
@@ -131,11 +135,11 @@ object NightStore {
 
     internal fun parse(line: String): Stored? {
         val c = line.split(',')
-        if (c.size != 8) return null
+        if (c.size != 8 && c.size != 9) return null
         return try {
             val start = c[0].toLong()
             val stage = Stage.fromWire(c[1]) ?: return null
-            val epoch = Epoch(start, c[3].toDouble(), c[4].toDoubleOrNull(), c[5].toDoubleOrNull(), c[6].toInt(), c[7].toInt())
+            val epoch = Epoch(start, c[3].toDouble(), c[4].toDoubleOrNull(), c[5].toDoubleOrNull(), c[6].toInt(), c[7].toInt(), c.getOrNull(8)?.let { EpochSource.fromWire(it) })
             Stored(epoch, EpochResult(start, stage, c[2].toDouble()))
         } catch (_: NumberFormatException) {
             null

@@ -32,6 +32,15 @@ object EngineConfig {
 
     const val WAKE_THRESHOLD = 0.04
     const val STILL_ACTIVITY = 0.006
+
+    /**
+     * WAKE_THRESHOLD_WATCH / STILL_ACTIVITY_WATCH: wrist counterparts, selected by the stager per epoch source.
+     * The watch computes activity with the phone's formula and unit, but a wrist moves more than a mattress, so
+     * the true values are probably higher. No recorded wrist night exists to calibrate on, so they equal the
+     * phone values on purpose; retune here and in src/engine/config.ts, then npm run fixtures:engine.
+     */
+    const val WAKE_THRESHOLD_WATCH = 0.04
+    const val STILL_ACTIVITY_WATCH = 0.006
     const val DEEP_STILL_EPOCHS = 6
     const val BASELINE_MIN_HR_EPOCHS = 20
     const val DEEP_HR_MARGIN_BPM = 0.5
@@ -56,11 +65,25 @@ object EngineConfig {
      */
     const val WATCH_SHIFT_MS = 2 * EPOCH_MS
 
-    /** WATCH_FRESH_MS: the watch is the live motion source while its last activity epoch is younger than this. */
+    /**
+     * WATCH_FRESH_MS: staleness timeout. No fresh watch epoch for this long and the phone sensor takes over.
+     * The watch sends about every 30 s and its data is shifted 60 s, so a healthy stream shows a fresh epoch at
+     * least every ~45 s; 150 s is 5 batch periods: one or two lost Bluetooth messages (the watch re-sends them)
+     * do not flip the source, a dead watch costs only a few epochs before the phone covers the night.
+     */
     const val WATCH_FRESH_MS = 150_000L
 
     /** WATCH_GRACE_MS: after a night starts the watch gets this long to deliver before the phone sensor takes over. */
     const val WATCH_GRACE_MS = 240_000L
+
+    /**
+     * WATCH_RECOVER_EPOCHS / WATCH_RECOVER_MS: hysteresis for returning to the watch after it was stale: this many
+     * consecutive fresh epochs over at least this long. Fresh means "the aggregator can still accept it", so a
+     * reconnect that flushes buffered backlog does not count. A flapping watch cannot switch the source more
+     * often than once per recovery plus one staleness timeout.
+     */
+    const val WATCH_RECOVER_EPOCHS = 3
+    const val WATCH_RECOVER_MS = 60_000L
 
     // --- Native runtime only (no JavaScript counterpart, not part of the parity check) ---
 

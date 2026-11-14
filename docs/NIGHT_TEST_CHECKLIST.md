@@ -5,7 +5,7 @@ Nothing in the Android or watch apps has yet been run over a real night. This ch
 ## Before you start
 
 - [ ] Installed per ANDROID_INSTALL.md; notifications, exact alarms, full-screen notifications granted; battery set to "Unrestricted".
-- [ ] Watch (optional): installed per WATCH_SETUP.md, permissions granted, watch charged.
+- [ ] Watch (the primary sensor, wear it all night): installed per WATCH_SETUP.md, permissions granted, watch charged. The setup screen says it is connected and "Use Wear OS watch" is checked.
 - [ ] Record: app version, phone model and Android version, watch model.
 - [ ] Record phone battery % at start. Record watch battery % at start.
 - [ ] Note whether the phone is on the charger or not. Do the first test on the charger, and a later night off the charger to measure drain.
@@ -42,7 +42,10 @@ Check and record:
 - [ ] Did the night service notification stay all night?
 - [ ] Watch connection status during the night, shown in the app, and whether the watch's tracking notification was still there in the morning.
 - [ ] Watch battery % at end and the drop.
-- [ ] Did the app show data from the watch the whole night, or fall back to the phone sensor? When?
+- [ ] Did the app show "Source: Watch" the whole night, or "Source: Phone fallback"? When, and for how long? The summary lists the share per source.
+- [ ] Optional watch-first checks: with the app open, take the watch off Bluetooth range (or switch its Bluetooth off) for about 5 minutes and confirm the status moves to "Phone fallback" after about 2.5 minutes, then bring it back and confirm the status returns to "Watch" within about 1.5 minutes.
+- [ ] Did a gap in the hypnogram match a watch dropout? Did any epoch look wrong right after a source change?
+- [ ] Phone sensor fallback: was the phone on the mattress, and did it cover the night when the watch was silent?
 - [ ] Any unexpected notifications, restarts, or the app being closed by Android.
 - [ ] Optionally compare against the sleep stages from the watch's own app.
 

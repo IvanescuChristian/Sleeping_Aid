@@ -292,7 +292,10 @@ class SleepAidNativePlugin : Plugin() {
     fun getNightEpochs(call: PluginCall) {
         val out = JSArray()
         NightStore.readEpochs(context).forEach {
-            out.put(JSObject().put("start", it.result.start).put("stage", it.result.stage.wire).put("confidence", it.result.confidence))
+            val o = JSObject().put("start", it.result.start).put("stage", it.result.stage.wire).put("confidence", it.result.confidence)
+            // Absent for gaps and for epochs persisted by 0.1.0: JavaScript reads "no source" as none.
+            it.epoch.source?.let { s -> o.put("source", s.wire) }
+            out.put(o)
         }
         call.resolve(JSObject().put("epochs", out))
     }

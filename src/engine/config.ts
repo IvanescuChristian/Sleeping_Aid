@@ -30,6 +30,16 @@ export const WAKE_THRESHOLD = 0.04;
 /** Epoch activity below this counts as motionless; sits just above accelerometer noise on a mattress. */
 export const STILL_ACTIVITY = 0.006;
 
+/**
+ * Wrist counterparts of the two thresholds above. The watch computes its activity with the same formula, gravity
+ * filter and unit as the phone (android/wear Protocol.kt ActivityAccumulator), but a wrist moves more than a
+ * mattress, so the true wrist values are probably higher. There is no recorded wrist night to calibrate on yet,
+ * so they equal the phone values on purpose; the stager already selects them by epoch source, so retuning is
+ * a change to these two numbers (then npm run fixtures:engine) and nothing else.
+ */
+export const WAKE_THRESHOLD_WATCH = 0.04;
+export const STILL_ACTIVITY_WATCH = 0.006;
+
 /** 6 epochs (3 min) of stillness before deep sleep is considered; shorter stillness is common in light sleep. */
 export const DEEP_STILL_EPOCHS = 6;
 
@@ -66,6 +76,37 @@ export const FRESH_EPOCHS = 2;
 
 /** Mean confidence the light run must reach; filters out stillness that merely has not yet become deep. */
 export const SMART_MIN_CONFIDENCE = 0.45;
+
+// --- Motion source (watch first, phone as fallback) ---
+
+/**
+ * Watch epochs reach the phone after they ended (the watch closes an epoch with its next sensor event, the sensor
+ * hub may hold events ~10 s, Bluetooth adds a moment). The aggregator closes an epoch ~2 s after its end, so
+ * unshifted watch data would land in closed epochs and be dropped. Every watch timestamp is therefore moved this
+ * much later (a multiple of the epoch length, so boundaries stay aligned) before it enters the pipeline.
+ * Costs: hypnogram times are this much late, and a smart decision sees data at least this much older.
+ */
+export const WATCH_SHIFT_MS = 2 * EPOCH_MS;
+
+/**
+ * Staleness timeout: no fresh watch epoch for this long and the phone sensor takes over. The watch sends about
+ * every 30 s and its data is shifted 60 s, so a healthy stream shows a fresh epoch at least every ~45 s;
+ * 150 s is 5 batch periods, long enough that one or two lost Bluetooth messages (the watch re-sends them) do
+ * not flip the source, short enough that a dead watch costs only a few epochs before the phone covers the night.
+ */
+export const WATCH_FRESH_MS = 150_000;
+
+/** After a night starts the watch gets this long to deliver its first epoch before the phone sensor takes over. */
+export const WATCH_GRACE_MS = 240_000;
+
+/**
+ * Hysteresis for going back to the watch after it was stale: this many consecutive fresh epochs, delivered over at
+ * least WATCH_RECOVER_MS. Fresh means "the aggregator can still accept it", so a reconnect that flushes an hour
+ * of buffered backlog does not count. A watch that flaps (up a minute, down a few) never gets back in, so the
+ * source cannot change more often than once per recovery plus one staleness timeout (about every 3.5 min).
+ */
+export const WATCH_RECOVER_EPOCHS = 3;
+export const WATCH_RECOVER_MS = 60_000;
 
 // --- Summary ---
 
