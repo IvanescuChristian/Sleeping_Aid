@@ -79,3 +79,11 @@
 - Phone, native smart wake, verified on an Android 15 (API 35) emulator with the screen off, unplugged, deep Doze forced and the task removed: the smart alarm fired inside the window about 5 minutes after simulated movement began; with constant stillness the backup fired exactly at the window end; after a reboot the backup was re-armed and NightService resumed by itself; after a process kill the sticky restart left no data gap; no second ring after Stop.
 - Watch app verified on a Wear OS 5 emulator: permissions, explanation dialog, health foreground service, synthetic heart rate, MEDITATION exercise with 5 s heart-rate batching, batches queued, survived 5 minutes of screen-off.
 - Not tested: real Galaxy S24 FE and Galaxy Watch4 Classic, the Data Layer phone-to-watch link, battery use, One UI background limits, the wake-up accelerometer batching path (JVM-tested only), stage accuracy on real sleepers.
+
+## 2026-11-14 release signing and in-place upgrades (0.1.2)
+
+- One permanent release key, kept by the maintainer outside the repository, now signs both the phone and watch APKs. Releases are signed locally and uploaded by hand; the key is not a CI secret.
+- New `scripts/release-android.sh`: builds the signed APKs, checks phone and watch share one certificate and that it is not the debug certificate, writes `SleepingAid-<version>-phone.apk`, `-watch.apk` and `SHA256SUMS.txt` to `dist-android/release-<version>/` and prints the `gh release` commands (it does not run them).
+- CI keeps the tests, the debug-signed check build, the Kotlin tests, the same-certificate check and the tag/version check, and no longer publishes a release.
+- Version 0.1.2. Verified on an Android 35 emulator: a build signed with the release key, with changed settings and a stored night, upgrades to 0.1.2 with `adb install -r` and keeps both; installing the debug-signed 0.1.1 and then the new-key APK fails with INSTALL_FAILED_UPDATE_INCOMPATIBLE (hence the one-time uninstall). The watch upgrade over the same key succeeds on a Wear OS 5 emulator and the app starts.
+- Docs: new docs/UPGRADING.md; SIGNING.md, ANDROID_INSTALL.md, WATCH_SETUP.md and README Install updated.

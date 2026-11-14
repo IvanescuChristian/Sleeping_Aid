@@ -129,7 +129,7 @@ Owner requirement: the watch is the primary sensor (heart rate and wrist motion)
 
 ## Versioning and signing
 
-`package.json` `version` is the single source (`android/sa-common.gradle`). versionName is that string. Phone versionCode = MAJOR * 1,000,000 + MINOR * 1,000 + PATCH (0.1.1 gives 1001; MINOR and PATCH below 1000, MAJOR below 100). Watch versionCode = 100,000,000 + phone versionCode, so the two forms never collide and both grow with each bump.
+`package.json` `version` is the single source (`android/sa-common.gradle`). versionName is that string. Phone versionCode = MAJOR * 1,000,000 + MINOR * 1,000 + PATCH (0.1.2 gives 1002, watch 100001002; MINOR and PATCH below 1000, MAJOR below 100). Watch versionCode = 100,000,000 + phone versionCode, so the two forms never collide and both grow with each bump.
 
 Both modules are signed with one key chosen by environment variables (`SA_KEYSTORE_FILE`, `SA_KEYSTORE_PASSWORD`, `SA_KEY_ALIAS`, `SA_KEY_PASSWORD`); partly set fails the build, none set falls back to the debug key with a warning. See docs/SIGNING.md. `.github/workflows/android.yml` runs tests, builds, verifies that both release APKs carry the same certificate, and publishes a GitHub Release on `v*` tags (tag must equal the package.json version; the MVP release is debug-signed and labelled so).
 

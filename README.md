@@ -10,7 +10,7 @@ phone's motion sensor and, optionally, a Bluetooth heart-rate sensor are used. I
 moment inside the window when you are in light sleep, and at the window end at
 the latest.
 
-Status: version 0.1.1, not yet validated on real sleepers or a real night. Read
+Status: version 0.1.2, not yet validated on real sleepers or a real night. Read
 the platform status, the status table and the known limits below before relying
 on it for something important.
 
@@ -97,8 +97,8 @@ the summary screen removes everything.
 ## Install
 
 - **Web:** open the served app in Chrome on Android over HTTPS and choose "Install app" (Web Bluetooth, Wake Lock and service workers need HTTPS or localhost).
-- **Android phone app:** download `SleepingAid-0.1.1-phone-mvp-debugsigned.apk` from the [v0.1.1 release](https://github.com/IvanescuChristian/Sleeping_Aid/releases/tag/v0.1.1) (the checksums are in `SHA256SUMS.txt` there) and follow docs/ANDROID_INSTALL.md. The v0.1.1 MVP release (and local builds) are debug-signed; uninstall before installing a future version. See docs/SIGNING.md.
-- **Watch (Wear OS):** download `SleepingAid-0.1.1-watch-mvp-debugsigned.apk` from the same release and sideload it: `adb pair`, `adb connect`, `adb install` (see docs/WATCH_SETUP.md). Not yet tested on a real Galaxy Watch4.
+- **Android phone app:** download `SleepingAid-0.1.2-phone.apk` from the [v0.1.2 release](https://github.com/IvanescuChristian/Sleeping_Aid/releases/tag/v0.1.2) (the checksums are in `SHA256SUMS.txt` there) and follow docs/ANDROID_INSTALL.md. Moving from the debug-signed 0.1.0/0.1.1 to 0.1.2 requires ONE last uninstall (phone and watch); from 0.1.2 on, new versions install over the top and keep your data. See docs/UPGRADING.md and docs/SIGNING.md.
+- **Watch (Wear OS):** download `SleepingAid-0.1.2-watch.apk` from the same release and sideload it: `adb pair`, `adb connect`, `adb install` (see docs/WATCH_SETUP.md). Not yet tested on a real Galaxy Watch4.
 - **Before the first real night:** work through docs/NIGHT_TEST_CHECKLIST.md, starting with a 20-minute nap test.
 
 ## What you must test on real hardware

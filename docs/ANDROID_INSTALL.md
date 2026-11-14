@@ -7,14 +7,14 @@ Status: the app is built, unit-tested and emulator-verified (not yet on a real p
 ## 1. Download
 
 1. On the phone, open the project's GitHub Releases page and pick the newest release.
-2. Download `SleepingAid-<version>-phone-mvp-debugsigned.apk` (the phone app), for example `SleepingAid-0.1.1-phone-mvp-debugsigned.apk`. The intended setup is phone plus a Wear OS watch worn all night, so also download the `watch` file and install it as described in WATCH_SETUP.md, from the same release. Without a watch the phone on the mattress is used instead.
+2. Download `SleepingAid-<version>-phone.apk` (the phone app), for example `SleepingAid-0.1.2-phone.apk`. The intended setup is phone plus a Wear OS watch worn all night, so also download the `watch` file and install it as described in WATCH_SETUP.md, from the same release. Without a watch the phone on the mattress is used instead.
 3. Also download `SHA256SUMS.txt`.
 
 ## 2. Check the download (recommended)
 
 The checksum file lists a SHA-256 value for each APK. Compare it with the file you downloaded:
 
-- On a PC: `sha256sum SleepingAid-<version>-phone-mvp-debugsigned.apk` (Linux, macOS) or `certutil -hashfile SleepingAid-<version>-phone-mvp-debugsigned.apk SHA256` (Windows). The value must equal the line in `SHA256SUMS.txt`.
+- On a PC: `sha256sum SleepingAid-<version>-phone.apk` (Linux, macOS) or `certutil -hashfile SleepingAid-<version>-phone.apk SHA256` (Windows). The value must equal the line in `SHA256SUMS.txt`.
 - On the phone, any file-hash app can do the same. If the values differ, delete the file and download again.
 
 ## 3. Allow installing from your browser or Files app
@@ -58,7 +58,7 @@ Samsung stops background apps aggressively. The hard alarm at the window end is 
 
 ## Updating
 
-This MVP release is signed with a debug key and has no update path. A later version may not install over it. Uninstall the previous version before installing a new one; this deletes the app's data. Install the phone and watch APKs from the same release. See SIGNING.md.
+Moving from the debug-signed 0.1.0/0.1.1 to 0.1.2 requires ONE last uninstall (phone and watch); from 0.1.2 on, new versions install over the top and keep your data. Install the phone and watch APKs from the same release. See UPGRADING.md and SIGNING.md.
 
 ## Uninstalling
 

@@ -3,8 +3,11 @@
 #
 # CI for the web app and the Android apps (phone and Wear OS watch).
 #   test          typecheck, unit tests and browser end-to-end tests (every PR, push to main, tag)
-#   build-android builds both APKs with scripts/build-android.sh and checks they share one signing certificate (debug-signed MVP, no keystore secrets)
-#   release       on a v* tag only: attaches the two release APKs, renamed *-mvp-debugsigned.apk, and a combined SHA256SUMS.txt to a GitHub Release
+#   build-android builds both APKs with scripts/build-android.sh and checks they share one signing certificate (CI has no keystore, so these are debug-signed check builds)
+#
+# CI publishes nothing. Releases are signed locally with the maintainer's release key and uploaded by hand
+# (scripts/release-android.sh, docs/SIGNING.md). Pushing a v* tag only runs these checks, including the
+# tag-equals-package.json-version check.
 name: android
 
 on:
@@ -13,7 +16,7 @@ on:
     branches: [main]
     tags: ['v*']
 
-# Least privilege by default; only the release job is allowed to write.
+# Read-only: no job publishes or writes anything.
 permissions:
   contents: read
 
@@ -68,7 +71,7 @@ jobs:
             exit 1
           fi
 
-      # MVP: both APKs are signed with the auto-generated debug key. There is no release keystore.
+      # CI has no release keystore: both APKs are signed with the auto-generated debug key (check build only).
       - name: Build phone and watch APKs
         # The Android SDK is preinstalled on ubuntu-latest; ANDROID_HOME is already set by the image.
         run: scripts/build-android.sh
@@ -98,54 +101,6 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: android-apks
+          name: android-check-apks-debugsigned
           path: dist-android/
           if-no-files-found: error
-
-  release:
-    if: github.ref_type == 'tag'
-    needs: [test, build-android]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7
-      - name: Tag must match the package.json version
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          version="$(sed -n 's/^  "version": "\(.*\)",$/\1/p' package.json | head -n 1)"
-          if [ "$TAG" != "v$version" ]; then
-            echo "::error::Tag $TAG does not match package.json version $version"
-            exit 1
-          fi
-          echo "VERSION=$version" >> "$GITHUB_ENV"
-      - uses: actions/download-artifact@v8
-        with:
-          name: android-apks
-          path: dist-android
-      - name: Name the assets and write combined checksums
-        working-directory: dist-android
-        run: |
-          cp "SleepingAid-${VERSION}.apk" "SleepingAid-${VERSION}-phone-mvp-debugsigned.apk"
-          cp "SleepingAid-Watch-${VERSION}.apk" "SleepingAid-${VERSION}-watch-mvp-debugsigned.apk"
-          sha256sum "SleepingAid-${VERSION}-phone-mvp-debugsigned.apk" "SleepingAid-${VERSION}-watch-mvp-debugsigned.apk" > SHA256SUMS.txt
-          cat SHA256SUMS.txt
-      - name: Write release notes header
-        run: |
-          cat > release-header.md <<'EOF'
-          **MVP build, signed with a debug key.**
-
-          - Future versions may not install over this one. Uninstall the previous version first (this deletes the app's data).
-          - Install the phone and watch APKs from the same release; they must share one signing key.
-          - Verify the files against `SHA256SUMS.txt`.
-          EOF
-      - uses: softprops/action-gh-release@v3
-        with:
-          generate_release_notes: true
-          body_path: release-header.md
-          files: |
-            dist-android/SleepingAid-${{ env.VERSION }}-phone-mvp-debugsigned.apk
-            dist-android/SleepingAid-${{ env.VERSION }}-watch-mvp-debugsigned.apk
-            dist-android/SHA256SUMS.txt

@@ -1,24 +1,29 @@
 # Signing the Android apps
 
-Status: MVP. The phone and watch APKs are signed with the Android **debug key**, which the build tools generate automatically. There is no release keystore, no update path and no signing secrets in GitHub.
+Status: from 0.1.2 on, the phone and watch APKs of every release are signed with one permanent release key, so new versions install over old ones and keep your data. Versions 0.1.0 and 0.1.1 were signed with the Android debug key; moving from them to 0.1.2 needs ONE last uninstall (phone and watch), see UPGRADING.md.
 
 ## What this means for you
 
-- Release assets are named `SleepingAid-<version>-phone-mvp-debugsigned.apk` and `SleepingAid-<version>-watch-mvp-debugsigned.apk`, with a combined `SHA256SUMS.txt`.
-- A debug key is not protected: anyone could build a lookalike app signed the same way. Check the SHA-256 value against the release page and only download from this project's Releases.
-- A future version may not install over this one. Uninstall the old version first; that deletes the app's data.
+- Release assets are named `SleepingAid-<version>-phone.apk` and `SleepingAid-<version>-watch.apk`, with a combined `SHA256SUMS.txt`.
+- From 0.1.2 on, install a new version over the top. Android only accepts an update signed by the same key, so a lookalike app signed by someone else cannot replace yours.
+- Check the SHA-256 value against the release page and only download from this project's Releases.
 - Install the phone and watch APKs from the same release.
 
-## Why phone and watch still match
+## Why phone and watch must match
 
-The phone and watch apps share a package name. The Wear OS Data Layer only delivers messages between two apps with the same package name and the same signing key. CI builds both APKs in one job, so both get the same auto-generated debug key, and the workflow fails the build if the two release APKs carry different certificate digests.
+The phone and watch apps share a package name. The Wear OS Data Layer only delivers messages between two apps with the same package name and the same signing key. Both modules are signed from the same settings in `android/sa-common.gradle`. CI fails the build if the two APKs carry different certificate digests, and `scripts/release-android.sh` checks the same thing, and that the certificate is not the debug certificate, before it stages a release.
 
-## Releasing
+## Where the key lives
 
-1. Bump `version` in `package.json` (the versionCode is derived from it, see ARCHITECTURE.md).
-2. Tag `v<version>` and push the tag. The tag must equal `v` plus the `package.json` version.
-3. The workflow tests, builds both APKs, checks they share one certificate, and publishes the two APKs and `SHA256SUMS.txt` to a GitHub Release. The release notes say it is an MVP debug-signed build.
+The release key is kept by the maintainer, outside this repository and outside GitHub (it is not a CI secret). Keystore files are ignored by git and must never be committed. Losing the key breaks updates: no later release could install over an existing copy, and every user would have to uninstall once more. The maintainer keeps private backups.
 
-## If you later want stable signing
+## Releasing (maintainer)
 
-`android/sa-common.gradle` still honours four environment variables for local builds: `SA_KEYSTORE_FILE`, `SA_KEYSTORE_PASSWORD`, `SA_KEY_ALIAS` and `SA_KEY_PASSWORD`. Set all four and the release APKs are signed with that keystore; set none and they use the debug key; a partial set fails the build on purpose. Create a keystore with `keytool -genkeypair` outside the repository (keystore files are ignored by git, never commit one) and keep a private backup: losing the key means installs can never be updated. The CI workflow does not use these variables.
+1. Bump `version` in `package.json` (the versionCode is derived from it, see ARCHITECTURE.md) and merge.
+2. Tag `v<version>` and push the tag. CI runs the tests, a debug-signed check build and the tag-equals-version check. CI publishes nothing.
+3. On the maintainer's machine run `scripts/release-android.sh <signing-env-file>` (or set `SA_SIGNING_ENV`). The env file exports `SA_KEYSTORE_FILE`, `SA_KEYSTORE_PASSWORD`, `SA_KEY_ALIAS` and `SA_KEY_PASSWORD`. The script builds the signed release APKs, verifies both carry the same certificate and not the debug one, and writes `SleepingAid-<version>-phone.apk`, `SleepingAid-<version>-watch.apk` and `SHA256SUMS.txt` to `dist-android/release-<version>/`.
+4. The script prints the `gh release create` (or `gh release upload`) command; run it yourself.
+
+## Local builds
+
+`scripts/build-android.sh` without the four variables signs the release APKs with the debug key and prints a warning; with all four set it uses that key; a partial set fails the build on purpose.

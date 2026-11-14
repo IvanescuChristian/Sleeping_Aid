@@ -14,13 +14,15 @@
 # the phone.
 #
 # Version: versionName is the "version" in package.json. versionCode is derived from it deterministically:
-#   phone versionCode = MAJOR * 1000000 + MINOR * 1000 + PATCH   (0.1.0 -> 1000, 0.1.1 -> 1001, 1.0.0 -> 1000000)
+#   phone versionCode = MAJOR * 1000000 + MINOR * 1000 + PATCH   (0.1.0 -> 1000, 0.1.2 -> 1002, 1.0.0 -> 1000000)
 #   watch versionCode = 100000000 + phone versionCode            (differs from the phone's; see android/sa-common.gradle)
 # so both grow with every version bump (MINOR and PATCH must stay below 1000, MAJOR below 100). The formulas
 # live in android/sa-common.gradle, which is the one Gradle uses.
 #
 # Release signing (optional): set all of SA_KEYSTORE_FILE, SA_KEYSTORE_PASSWORD, SA_KEY_ALIAS and
 # SA_KEY_PASSWORD. Without them both release APKs are signed with the debug key and a warning is printed.
+# Shipping releases: use scripts/release-android.sh, which loads the maintainer's signing env file, calls this
+# script and verifies the certificates.
 #
 # Output in dist-android/ (each with a .sha256):
 #   SleepingAid-<version>.apk               phone, release        SleepingAid-<version>-debug.apk        phone, debug

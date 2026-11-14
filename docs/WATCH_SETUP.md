@@ -4,7 +4,7 @@
 
 The watch is the primary sensor of Sleeping Aid on Android. Wear it all night: it records heart rate and wrist motion and sends them to the phone app, which makes all decisions and rings the alarm. The phone on the mattress is only the fallback, used while the watch is silent or not set up. The watch app does nothing useful without the phone app.
 
-The watch app and the phone app have the same package name and must be signed with the same key. Install the phone and watch APKs from the same release (see SIGNING.md), and uninstall the previous version before installing a new one.
+The watch app and the phone app have the same package name and must be signed with the same key. Install the phone and watch APKs from the same release (see SIGNING.md). Moving from the debug-signed 0.1.0/0.1.1 to 0.1.2 requires ONE last uninstall (phone and watch); from 0.1.2 on, new versions install over the top and keep your data (`adb install -r`, see UPGRADING.md).
 
 ## Why a manual install
 
@@ -30,10 +30,10 @@ Install Android platform-tools on the PC. Then:
 ## 3. Install the watch APK
 
 ```
-adb install SleepingAid-<version>-watch-mvp-debugsigned.apk
+adb install SleepingAid-<version>-watch.apk
 ```
 
-If more than one device is connected, add `-s <ip>:<port>`. Check the file against `SHA256SUMS.txt` first (see ANDROID_INSTALL.md). Afterwards you can turn Wireless debugging and ADB debugging off again.
+If more than one device is connected, add `-s <ip>:<port>`. Check the file against `SHA256SUMS.txt` first (see ANDROID_INSTALL.md). To update to a newer version from 0.1.2 on, use `adb install -r SleepingAid-<version>-watch.apk`. Afterwards you can turn Wireless debugging and ADB debugging off again.
 
 Install the phone APK on the phone as described in ANDROID_INSTALL.md.
 
