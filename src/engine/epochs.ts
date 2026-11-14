@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Strict-1.0.0
 // Copyright (c) 2026 Christian Ivanescu. See LICENSE for terms (source-available; not open source).
 import { EPOCH_MS, GRAVITY_TAU_MS, MAX_GAP_EPOCHS, MIN_HR_SAMPLES_FOR_SD, REORDER_GRACE_MS } from './config';
-import type { Epoch, HrSample, MotionSample } from './types';
+import type { ActivitySample, Epoch, HrSample, MotionSample } from './types';
 
 interface Acc {
   devSum: number;
@@ -54,6 +54,27 @@ export class EpochAggregator {
     acc.devSum += dev;
     acc.motionN++;
     return this.touch(s.t);
+  }
+
+  /**
+   * Adds an activity value that was already aggregated elsewhere (the watch): the mean absolute deviation, in
+   * m/s^2, of `samples` accelerometer readings that all fall into the epoch containing `t`. It lands in the
+   * same accumulator as raw motion samples, so a source must not mix both for the same epochs.
+   */
+  ingestActivity(a: ActivitySample): Epoch[] {
+    if (!isFiniteNum(a?.t) || !isFiniteNum(a.activity) || a.activity < 0 || !Number.isInteger(a.samples) || a.samples < 1) {
+      this.rejected++;
+      return [];
+    }
+    const start = this.bucket(a.t);
+    if (this.isClosed(start)) {
+      this.late++;
+      return [];
+    }
+    const acc = this.acc(start);
+    acc.devSum += a.activity * a.samples;
+    acc.motionN += a.samples;
+    return this.touch(a.t);
   }
 
   ingestHr(s: HrSample): Epoch[] {

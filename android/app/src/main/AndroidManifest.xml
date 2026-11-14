@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme">
+
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:name=".MainActivity"
+            android:label="@string/title_activity_main"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:launchMode="singleTask"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+        </activity>
+
+        <!-- Native alarm screen. Shown over the lock screen by the full-screen intent of the alarm
+             notification. Direct-boot aware so it can ring before the first unlock after a reboot. -->
+        <activity
+            android:name=".AlarmActivity"
+            android:exported="false"
+            android:directBootAware="true"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:launchMode="singleInstance"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+
+        <!-- Fired by AlarmManager.setAlarmClock. Not exported: only our own PendingIntent targets it. -->
+        <receiver
+            android:name=".AlarmReceiver"
+            android:exported="false"
+            android:directBootAware="true" />
+
+        <!-- Re-arms the stored alarm after a reboot, an app update or a change of the exact-alarm
+             permission, because AlarmManager forgets alarms in all three cases. LOCKED_BOOT_COMPLETED
+             arrives before the first unlock; the stored alarm lives in device-protected storage. -->
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true"
+            android:directBootAware="true">
+            <intent-filter>
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Rings the alarm (sound and vibration) independently of the WebView. -->
+        <service
+            android:name=".AlarmService"
+            android:exported="false"
+            android:directBootAware="true"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <!-- Night tracking: runs the native smart-wake engine (accelerometer in, wake decision out) with the
+             screen off and the app closed. Restarts itself (START_STICKY) after a kill. -->
+        <service
+            android:name=".NightService"
+            android:exported="false"
+            android:foregroundServiceType="health" />
+
+        <!-- Heart-rate and activity batches from the Wear OS watch app (Data Layer messages). -->
+        <service
+            android:name=".WatchMessageService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/sleepaid/epochs" />
+            </intent-filter>
+        </service>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"></meta-data>
+        </provider>
+    </application>
+
+    <!-- Permissions. The app has no network access on purpose (no INTERNET permission). -->
+
+    <!-- Exact alarms. WHY: the hard fallback alarm must fire at the window end, not "around" it.
+         SCHEDULE_EXACT_ALARM is user-revocable on Android 12 to 12L; USE_EXACT_ALARM is granted at
+         install on Android 13+ and cannot be revoked (this is an alarm-clock app, distributed by sideloading). -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+
+    <!-- WHY: lets the alarm notification open the native alarm screen over the lock screen. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+
+    <!-- WHY: Android 13+ hides notifications (including the alarm one and the night-tracking one) until granted. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- WHY: keeps the CPU awake while the alarm rings, and (only on phones without a wake-up accelerometer)
+         while the night engine tracks, so it can still decide inside the wake window. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- WHY: the alarm vibrates together with the sound. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- WHY: AlarmManager forgets alarms on reboot; the stored alarm is re-armed after boot. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- WHY: both services run in the foreground. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- WHY: the night service type is "health" (overnight sensor tracking). Android 14+ requires this permission... -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
+    <!-- ...and, as a runtime prerequisite for the health type, one of BODY_SENSORS, ACTIVITY_RECOGNITION or
+         HIGH_SAMPLING_RATE_SENSORS. The last is a normal permission granted at install, so no prompt is needed. -->
+    <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
+    <!-- WHY: the ringing alarm is a foreground service of type mediaPlayback, so the sound keeps playing
+         when the screen is on and the full-screen intent is only shown as a heads-up notification. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+</manifest>

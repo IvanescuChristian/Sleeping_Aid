@@ -32,6 +32,17 @@ afterEach(() => {
 });
 
 describe('WakeLockHolder', () => {
+  it('does not use the Screen Wake Lock API on native Android', () => {
+    const request = vi.fn();
+    installDom({ request });
+    const holder = new WakeLockHolder(() => true);
+    holder.start();
+    expect(request).not.toHaveBeenCalled();
+    expect(holder.state).toBe('pending');
+    holder.stop();
+  });
+
+
   it('releases a sentinel that resolves after stop() and never reports held', async () => {
     const sentinel = new FakeSentinel();
     let resolve!: (s: FakeSentinel) => void;

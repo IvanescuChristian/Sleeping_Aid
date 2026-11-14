@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Strict-1.0.0
 // Copyright (c) 2026 Christian Ivanescu. See LICENSE for terms (source-available; not open source).
 import { suggestBedtimes } from '../engine/suggest';
+import { nativeAlarm, screenPreference } from '../native/nativeAlarm';
+import { exactAlarmPrompt } from '../native/prompt';
+import { watchLink, watchPreference } from '../native/watch';
 import { AlarmSound } from './audio';
 import { fmtClock, fmtDate, fmtHours, h } from './dom';
 import { drawHypnogram } from './hypnogram';
+import { NativeNightSession } from './nativeNight';
 import { NightSession, type NightStatus } from './night';
 import { AlarmScheduler } from './scheduler';
 import { HeartRateMonitor, MotionSensor } from './sensors';
@@ -27,13 +31,29 @@ const STALE_MS = 3 * 60 * 60_000;
 const NOTE =
   "Keep the phone charging and this app open on screen. As a fail-safe, also set your phone's regular alarm for the window end.";
 
+const NATIVE_NOTE =
+  'Smart wake runs on the phone itself: the screen can be off and the app closed. The exact backup alarm at the window end always rings, even if tracking stops.';
+
+const NATIVE_HINT =
+  'Put the phone on the mattress or the nightstand, ideally charging. Heart rate and motion come from the Wear OS watch when it is connected, otherwise from the phone sensor.';
+
 const STAGE_TEXT: Record<string, string> = { wake: 'Awake', light: 'Light sleep', deep: 'Deep sleep', rem: 'REM', unknown: 'Waiting for data' };
 
 export function mountApp(root: HTMLElement): void {
   const sound = new AlarmSound();
   const hr = new HeartRateMonitor();
-  let session: NightSession | null = null;
+  let session: NightSession | NativeNightSession | null = null;
   let snooze: AlarmScheduler | null = null;
+  /** Whether a start message went to the watch for this night (so a stop is due). The native engine consumes its data. */
+  let watchUsed = false;
+
+  /** Tells the watch to stop recording. Safe to call repeatedly. */
+  const endWatch = () => {
+    if (watchUsed) {
+      watchUsed = false;
+      void watchLink.stop();
+    }
+  };
 
   const show = (...nodes: Node[]) => {
     root.replaceChildren(...nodes);
@@ -49,7 +69,21 @@ export function mountApp(root: HTMLElement): void {
     const motion = h('input', { type: 'checkbox', id: 'use-motion', checked: settings.useMotion });
     const sugg = h('ul', { id: 'suggestions', class: 'plain' });
     const hrNote = h('p', { id: 'hr-note', class: 'hint' });
+    const watchBox = h('input', { type: 'checkbox', id: 'use-watch', checked: watchPreference.get() });
+    const watchNote = h('p', { id: 'watch-note', class: 'hint' }, 'Looking for a watch...');
+    watchBox.addEventListener('change', () => watchPreference.set(watchBox.checked));
+    if (watchLink.enabled) {
+      void watchLink.status().then((st) => {
+        watchNote.textContent = !st.available
+          ? 'Watch support is not available on this phone.'
+          : st.connected
+            ? `Watch connected: ${st.nodes.map((n) => n.name).join(', ')}. It records heart rate and wrist motion; if it goes silent, the phone sensor takes over.`
+            : 'No watch with the Sleeping Aid watch app found. Install the watch app and open it once. The phone sensor is used instead.';
+      });
+    }
     const hrBtn = h('button', { type: 'button', id: 'connect-hr', class: 'btn' }, 'Connect heart-rate sensor');
+    const screenBox = h('input', { type: 'checkbox', id: 'keep-screen', checked: screenPreference.get() });
+    screenBox.addEventListener('change', () => screenPreference.set(screenBox.checked));
     const soundNote = h('p', { id: 'sound-note', class: 'hint', role: 'status' });
 
     const current = () => computeWindow(startIn.value, endIn.value, Date.now());
@@ -139,12 +173,17 @@ export function mountApp(root: HTMLElement): void {
           null,
           h('h2', null, 'Sensors'),
           h('label', { class: 'check' }, motion, ' Use motion (phone lying on the mattress)'),
-          hrBtn,
-          hrNote,
+          watchLink.enabled && h('label', { class: 'check' }, watchBox, ' Use Wear OS watch (heart rate and motion)'),
+          watchLink.enabled && watchNote,
+          // Web Bluetooth does not run reliably with the screen off, so the native engine takes heart rate from the watch only.
+          !nativeAlarm.enabled && hrBtn,
+          !nativeAlarm.enabled && hrNote,
+          nativeAlarm.enabled && h('label', { class: 'check' }, screenBox, ' Keep the screen on, dimmed (optional)'),
         ),
         h('section', null, h('h2', null, 'Alarm sound'), testBtn, soundNote),
         h('section', null, h('h2', null, 'Bedtime suggestions'), sugg),
-        h('p', { class: 'callout', id: 'reliability-note' }, NOTE),
+        h('p', { class: 'callout', id: 'reliability-note' }, nativeAlarm.enabled ? NATIVE_NOTE : NOTE),
+        nativeAlarm.enabled && h('p', { class: 'hint', id: 'native-screen-hint' }, NATIVE_HINT),
         start,
         h('div', { class: 'row' }, demo, hist),
       ),
@@ -156,12 +195,61 @@ export function mountApp(root: HTMLElement): void {
     // Both calls start inside the tap, which is what the autoplay and permission rules look for.
     // The audio unlock is not awaited: without a gesture (a resumed night) resume() stays pending until the next tap.
     void sound.unlock();
-    const motionOk = active.useMotion && !o.demo && !o.resumed ? await MotionSensor.requestPermission() : true;
+    const native = !o.demo && nativeAlarm.enabled;
+    // Native Android reads the accelerometer itself, so the WebView's permission API says nothing about it.
+    const motionOk = active.useMotion && !o.demo && !o.resumed && !native ? await MotionSensor.requestPermission() : true;
     let notice = '';
     if (!motionOk) {
       active = { ...active, useMotion: false };
       notice = 'Motion permission was denied, so only the wake window (and heart rate, if connected) is used.';
     }
+    // Wear OS watch: used when one with the watch app is connected. It then supplies heart rate and motion; the
+    // native engine falls back to the phone sensor when the watch goes silent.
+    const watchOn = native && watchLink.enabled && watchPreference.get() && (await watchLink.status()).connected;
+
+    if (native) {
+      // A resumed night first asks the engine what happened while the app was closed: if it already woke the
+      // user, tracking must not be started again, whatever the hard alarm reports.
+      const before = o.resumed ? await nativeAlarm.status() : null;
+      const done = before !== null && before.startedAt === active.startedAt && before.state === 'woke';
+      if (!done) {
+        const armed = await nativeAlarm.arm({ windowStart: active.windowStart, windowEnd: active.windowEnd, startedAt: active.startedAt, useMotion: active.useMotion, useWatch: watchOn });
+        if (!armed.ok) {
+          show(
+            exactAlarmPrompt(nativeAlarm, {
+              reason: armed.reason === 'error' ? armed.message : undefined,
+              onReady: () => void beginNight(active, o),
+              onBack: () => {
+                clearActive();
+                showSetup();
+              },
+            }),
+          );
+          return;
+        }
+        if (armed.warnings.length) notice = [notice, ...armed.warnings].filter(Boolean).join(' ');
+        // Optional, after arming, so a blocked night never leaves the screen pinned on.
+        if (screenPreference.get()) void nativeAlarm.nightScreen(true);
+      }
+      if (watchOn) {
+        watchUsed = true;
+        if (!done) void watchLink.start(!o.resumed);
+      }
+      saveActive(active);
+      session?.shutdown();
+      const ns = new NativeNightSession({
+        active,
+        useWatch: watchOn,
+        api: nativeAlarm,
+        onStatus: (st) => paint?.(st),
+        onAlarm: (a) => showAlarm(a, { resumed: o.resumed === true }),
+      });
+      session = ns;
+      showNight(ns, notice, false, o.resumed === true);
+      await ns.start();
+      return;
+    }
+
     if (!o.demo) saveActive(active);
     session?.shutdown();
     session = new NightSession({
@@ -177,8 +265,17 @@ export function mountApp(root: HTMLElement): void {
 
   let paint: ((s: NightStatus) => void) | null = null;
 
-  function showNight(s: NightSession, notice: string, demo: boolean, resumed: boolean): void {
-    const clock = h('div', { class: 'clock', 'aria-hidden': 'true' }, fmtClock(s.now()));
+  /** What the night screen needs of a night: the web session and the native one both fit. */
+  interface NightHandle {
+    windowStart: number;
+    windowEnd: number;
+    /** Ends the night without an alarm and returns the stored night, if there was enough data. */
+    stop(): StoredNight | null | Promise<StoredNight | null>;
+  }
+
+  function showNight(s: NightHandle & { now?(): number }, notice: string, demo: boolean, resumed: boolean): void {
+    const native = nativeAlarm.enabled && !demo;
+    const clock = h('div', { class: 'clock', 'aria-hidden': 'true' }, fmtClock(s.now ? s.now() : Date.now()));
     const stage = h('p', { id: 'stage', class: 'big-stage', role: 'status' }, 'Waiting for data');
     const motionLine = h('p', { id: 'motion-status' }, 'Motion: -');
     const hrLine = h('p', { id: 'hr-status' }, 'no HR');
@@ -195,10 +292,21 @@ export function mountApp(root: HTMLElement): void {
       set(stage, STAGE_TEXT[st.stage] ?? st.stage);
       set(
         motionLine,
-        st.motionState === 'ok' ? `Motion: ${st.motionHz} Hz` : st.motionState === 'off' ? 'Motion: off' : st.motionState === 'none' ? 'Motion: no data from this device' : 'Motion: starting...',
+        st.motionSource === 'watch'
+          ? 'Motion: watch'
+          : st.motionSource === 'watch-waiting'
+            ? 'Motion: waiting for the watch'
+            : st.motionState === 'ok'
+              ? `Motion: ${st.motionHz} Hz`
+              : st.motionState === 'off'
+                ? 'Motion: off'
+                : st.motionState === 'none'
+                  ? 'Motion: no data from this device'
+                  : 'Motion: starting...',
       );
-      set(hrLine, st.hrBpm !== null ? `Heart rate: ${st.hrBpm} bpm` : 'no HR');
-      const lost = st.wakeLock === 'lost' || st.wakeLock === 'unavailable';
+      set(hrLine, st.hrBpm !== null ? `Heart rate: ${Math.round(st.hrBpm)} bpm` : 'no HR');
+      // Native Android keeps the screen on itself; the Screen Wake Lock API is not used there.
+      const lost = !nativeAlarm.enabled && (st.wakeLock === 'lost' || st.wakeLock === 'unavailable');
       wl.hidden = !lost;
       set(wl, st.wakeLock === 'lost' ? 'Screen lock was released. Keep the screen on or the alarm may be late.' : 'Cannot keep the screen awake here. Disable auto-lock manually.');
       snd.hidden = sound.running || st.demo;
@@ -212,11 +320,15 @@ export function mountApp(root: HTMLElement): void {
       const no = h('button', { type: 'button', class: 'btn' }, 'Keep sleeping');
       no.addEventListener('click', () => stopBox.replaceChildren(stopBtn));
       yes.addEventListener('click', () => {
-        const saved = s.stop();
         paint = null;
-        clearActive();
-        if (saved) showSummary(saved.id);
-        else showSetup();
+        // The engine's epochs are read before disarm() forgets them.
+        void Promise.resolve(s.stop()).then(async (saved) => {
+          endWatch();
+          await nativeAlarm.disarm();
+          clearActive();
+          if (saved) showSummary(saved.id);
+          else showSetup();
+        });
       });
       stopBox.replaceChildren(h('p', { class: 'dim' }, 'Stop tracking and cancel the alarm?'), yes, no);
     });
@@ -229,7 +341,14 @@ export function mountApp(root: HTMLElement): void {
         wl,
         snd,
         demo && h('p', { class: 'banner info' }, 'Demo night: a synthetic night replayed at high speed.'),
-        resumed && h('p', { class: 'banner info' }, 'Night resumed after a reload. Sensor history before the reload is lost; the alarm window is kept. Reconnect heart rate is not possible without a tap.'),
+        resumed &&
+          h(
+            'p',
+            { class: 'banner info' },
+            native
+              ? 'Night resumed. Tracking runs in the background and kept its history.'
+              : 'Night resumed after a reload. Sensor history before the reload is lost; the alarm window is kept. Reconnect heart rate is not possible without a tap.',
+          ),
         notice && h('p', { class: 'banner' }, notice),
         clock,
         windowText,
@@ -242,9 +361,29 @@ export function mountApp(root: HTMLElement): void {
   }
 
   // ---------- Alarm ----------
-  function showAlarm(a: StoredAlarm): void {
+  function showAlarm(a: StoredAlarm, o: { resumed?: boolean } = {}): void {
     paint = null;
-    sound.startAlarm();
+    // The alarm screen must be bright again (only matters when the optional keep-screen-on was used).
+    void nativeAlarm.nightScreen(false);
+    // The night is over: the watch has nothing left to record.
+    endWatch();
+    let closed = false;
+    if (!nativeAlarm.enabled) {
+      sound.startAlarm();
+    } else if (!o.resumed) {
+      // The native alarm rings (also if the WebView had been suspended). The web tone is only a backup
+      // for the case where native has nothing pending to ring; a resumed, already fired alarm stays silent.
+      void nativeAlarm.wakeNow().then(async (r) => {
+        if (r === 'no-pending' && !closed) sound.startAlarm();
+        // Stopped on the native screen before this ran: the alarm event was missed, so close instead of showing a silent screen.
+        else if (r === 'already-fired' && !closed && (await nativeAlarm.alreadyEnded()) && !closed) dismiss.click();
+      });
+    } else if (nativeAlarm.enabled) {
+      // Resumed after a reload: same stale case, the native Stop may have happened while the app was closed.
+      void nativeAlarm.alreadyEnded().then((ended) => {
+        if (ended && !closed) dismiss.click();
+      });
+    }
     const reasonText =
       a.reason === 'smart'
         ? a.stage === 'wake'
@@ -272,13 +411,22 @@ export function mountApp(root: HTMLElement): void {
       wake.hidden = sound.running;
     }, 300);
 
+    // Stop, Snooze or the 15-minute silence on the native alarm screen or notification: mirror it here.
+    const offAlarmEnded = nativeAlarm.onAlarmEnded(Date.now() - 2000, (reason) => {
+      if (closed) return;
+      if (reason === 'snoozed') snz.click();
+      else dismiss.click();
+    });
     const finish = () => {
+      closed = true;
+      offAlarmEnded();
       sound.stopAlarm();
       snooze?.stop();
       snooze = null;
     };
     dismiss.addEventListener('click', () => {
       finish();
+      void nativeAlarm.disarm();
       session?.release();
       const saved = session?.saved ?? loadHistory().find((n) => n.alarm?.at === a.at) ?? null;
       clearActive();
@@ -289,6 +437,7 @@ export function mountApp(root: HTMLElement): void {
     snz.addEventListener('click', () => {
       finish();
       const end = Date.now() + SNOOZE_MS;
+      void nativeAlarm.rearmAt(end);
       snooze = new AlarmScheduler({
         windowEnd: end,
         onTick: () => null,
@@ -306,6 +455,7 @@ export function mountApp(root: HTMLElement): void {
             cancel.addEventListener('click', () => {
               snooze?.stop();
               snooze = null;
+              void nativeAlarm.disarm();
               session?.release();
               session = null;
               clearActive();
@@ -369,6 +519,7 @@ export function mountApp(root: HTMLElement): void {
       no.addEventListener('click', () => delBox.replaceChildren(del));
       yes.addEventListener('click', () => {
         deleteAll();
+        void nativeAlarm.clearNight();
         showSummary();
       });
       delBox.replaceChildren(h('p', { class: 'dim' }, 'Removes every stored night and your settings from this device.'), yes, no);
@@ -392,7 +543,7 @@ export function mountApp(root: HTMLElement): void {
   const active = loadActive();
   const now = Date.now();
   if (active && active.fired && now - active.fired.at < STALE_MS) {
-    showAlarm(active.fired);
+    showAlarm(active.fired, { resumed: true });
   } else if (active && !active.fired && now < active.windowEnd + STALE_MS) {
     void beginNight(active, { demo: false, resumed: true });
   } else {

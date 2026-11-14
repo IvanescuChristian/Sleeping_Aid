@@ -1,0 +1,62 @@
+// Shared by the phone (:app) and watch (:wear) modules; applied from the root build.gradle.
+//
+// Both APKs MUST carry the same applicationId and the same signing key: the Wear Data Layer only delivers
+// messages between apps that match on both. Keeping the version and signing logic in one script is what
+// guarantees they cannot drift apart.
+import groovy.json.JsonSlurper
+
+// ---- Version: single source of truth is ../package.json ("version": "MAJOR.MINOR.PATCH") ----
+// versionName = package.json version.
+// Phone versionCode = MAJOR * 1_000_000 + MINOR * 1_000 + PATCH (each of MINOR and PATCH below 1000).
+// Deterministic and monotonic for any increasing semantic version: 0.1.0 -> 1000, 0.1.1 -> 1001, 1.0.0 -> 1000000.
+// Watch versionCode = phone versionCode + 100_000_000. The two APKs share one package name, and a store (or
+// Wear OS multi-APK delivery) requires different codes per form factor; a fixed offset keeps every watch code
+// above every phone code, so a watch build can never collide with a later phone build (unlike "phone + 1").
+// MAJOR must stay below 100 so the watch code stays below the 2_100_000_000 limit. Sideloaded builds ignore this.
+def pkg = new JsonSlurper().parse(file('../package.json'))
+def versionParts = (pkg.version as String).tokenize('.')
+if (versionParts.size() != 3 || !versionParts.every { it ==~ /\d+/ }) {
+    throw new GradleException("package.json version must be MAJOR.MINOR.PATCH, got '${pkg.version}'")
+}
+def (vMajor, vMinor, vPatch) = versionParts.collect { it as int }
+if (vMinor > 999 || vPatch > 999 || vMajor > 99) {
+    throw new GradleException('MAJOR must be below 100 and MINOR and PATCH below 1000 for the versionCode scheme')
+}
+ext.saVersionName = pkg.version as String
+ext.saPhoneVersionCode = vMajor * 1_000_000 + vMinor * 1_000 + vPatch
+ext.saWatchVersionCode = 100_000_000 + (vMajor * 1_000_000 + vMinor * 1_000 + vPatch)
+
+// ---- Optional release signing from environment variables ----
+// SA_KEYSTORE_FILE, SA_KEYSTORE_PASSWORD, SA_KEY_ALIAS, SA_KEY_PASSWORD. All four set: release is signed with
+// that key. None set: release is signed with the debug key and a warning is printed. Partly set: build fails,
+// so a half-configured release is never silently signed with the debug key.
+def signingVars = ['SA_KEYSTORE_FILE', 'SA_KEYSTORE_PASSWORD', 'SA_KEY_ALIAS', 'SA_KEY_PASSWORD']
+def signingSet = signingVars.findAll { System.getenv(it)?.trim() }
+ext.saUseReleaseKey = signingSet.size() == signingVars.size()
+if (signingSet.size() > 0 && !ext.saUseReleaseKey) {
+    throw new GradleException("Release signing is partly configured. Set all of ${signingVars} or none. Missing: ${signingVars - signingSet}")
+}
+if (ext.saUseReleaseKey && !file(System.getenv('SA_KEYSTORE_FILE')).isFile()) {
+    throw new GradleException('SA_KEYSTORE_FILE does not point to an existing file')
+}
+
+// Fills a `signingConfigs` container with the shared release config (only when a release key is configured).
+ext.saConfigureSigning = { signingConfigs ->
+    if (rootProject.ext.saUseReleaseKey) {
+        signingConfigs.create('release') {
+            storeFile = file(System.getenv('SA_KEYSTORE_FILE'))
+            storePassword = System.getenv('SA_KEYSTORE_PASSWORD')
+            keyAlias = System.getenv('SA_KEY_ALIAS')
+            keyPassword = System.getenv('SA_KEY_PASSWORD')
+        }
+    }
+}
+
+if (!ext.saUseReleaseKey) {
+    gradle.taskGraph.whenReady { graph ->
+        if (graph.allTasks.any { (it.path.startsWith(':app:') || it.path.startsWith(':wear:')) && it.name.toLowerCase().contains('release') && it.name.startsWith('assemble') }) {
+            println '*** WARNING: no release keystore configured (SA_KEYSTORE_FILE, SA_KEYSTORE_PASSWORD, SA_KEY_ALIAS, SA_KEY_PASSWORD).'
+            println '*** The release APKs are signed with the DEBUG key. Fine for sideloading to your own devices; updates only install over builds signed with the same key.'
+        }
+    }
+}

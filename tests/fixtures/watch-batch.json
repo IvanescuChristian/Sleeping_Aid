@@ -1,0 +1,30 @@
+{
+  "description": "Synthetic watch batch (schema v1). 'wire' is the exact text format the watch app encodes (android/wear Protocol.kt BatchBuilder.encode); 'expected' is what src/native/watch.ts must decode it to. All numbers are made up.",
+  "wire": "{\"v\":1,\"session\":\"a1b2c3d4\",\"seq\":7,\"sentAt\":1800000125000,\"epochMs\":30000,\"epochs\":[{\"t\":1800000060000,\"act\":0.012345,\"n\":298},{\"t\":1800000090000,\"act\":0.200000,\"n\":300}],\"hr\":[[1800000061000,58.0],[1800000066000,57.5],[1800000071000,57.5]]}",
+  "expected": {
+    "session": "a1b2c3d4",
+    "seq": 7,
+    "sentAt": 1800000125000,
+    "epochs": [
+      { "start": 1800000060000, "activity": 0.012345, "samples": 298 },
+      { "start": 1800000090000, "activity": 0.2, "samples": 300 }
+    ],
+    "hr": [
+      { "t": 1800000061000, "bpm": 58 },
+      { "t": 1800000066000, "bpm": 57.5 },
+      { "t": 1800000071000, "bpm": 57.5 }
+    ]
+  },
+  "invalid": [
+    "",
+    "not json",
+    "[]",
+    "{\"v\":2,\"session\":\"s\",\"seq\":1,\"sentAt\":1,\"epochMs\":30000,\"epochs\":[],\"hr\":[]}",
+    "{\"v\":1,\"session\":\"\",\"seq\":1,\"sentAt\":1,\"epochMs\":30000,\"epochs\":[],\"hr\":[]}",
+    "{\"v\":1,\"session\":\"s\",\"seq\":0,\"sentAt\":1,\"epochMs\":30000,\"epochs\":[],\"hr\":[]}",
+    "{\"v\":1,\"session\":\"s\",\"seq\":1.5,\"sentAt\":1,\"epochMs\":30000,\"epochs\":[],\"hr\":[]}",
+    "{\"v\":1,\"session\":\"s\",\"seq\":1,\"sentAt\":1,\"epochMs\":60000,\"epochs\":[],\"hr\":[]}",
+    "{\"v\":1,\"session\":\"s\",\"seq\":1,\"sentAt\":1,\"epochMs\":30000,\"epochs\":{},\"hr\":[]}",
+    "{\"v\":1,\"session\":\"s\",\"seq\":1,\"sentAt\":1,\"epochMs\":30000,\"epochs\":[]}"
+  ]
+}

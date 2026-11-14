@@ -1,0 +1,50 @@
+apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
+
+// Wear OS companion: streams heart rate and wrist activity to the phone app. It needs the phone app (it does
+// nothing alone) and shares applicationId and signing key with it. See ../sa-common.gradle.
+
+android {
+    // The namespace is the R/BuildConfig package only; the installed package id is applicationId below.
+    namespace = "io.github.ivanescuchristian.sleepingaid.wear"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        // MUST equal the phone app's applicationId (Data Layer messages are only delivered between matching apps).
+        applicationId "io.github.ivanescuchristian.sleepingaid"
+        // Wear OS 3 (API 30) is the first Wear OS release with Health Services.
+        minSdkVersion 30
+        // 34 (Wear OS 5): keeps the BODY_SENSORS permission model. Targeting 36 would require the new
+        // android.permission.health.* heart-rate permissions and a different permission flow.
+        targetSdkVersion 34
+        versionCode rootProject.ext.saWatchVersionCode
+        versionName rootProject.ext.saVersionName
+    }
+    signingConfigs {
+        rootProject.ext.saConfigureSigning(delegate)
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig rootProject.ext.saUseReleaseKey ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21
+    }
+}
+
+dependencies {
+    implementation "androidx.core:core:$androidxCoreVersion"
+    // Health Services returns ListenableFuture; the interface is not on the compile classpath by itself
+    // (the stand-alone listenablefuture artifact is replaced by an empty one whenever guava is in the graph).
+    implementation "com.google.guava:guava:33.4.8-android"
+    implementation "androidx.health:health-services-client:$healthServicesClientVersion"
+    implementation "com.google.android.gms:play-services-wearable:$playServicesWearableVersion"
+}

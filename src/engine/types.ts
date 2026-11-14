@@ -18,6 +18,14 @@ export interface HrSample {
   bpm: number;
 }
 
+/** Activity of one epoch measured by another device: mean absolute deviation in m/s^2 over `samples` readings. */
+export interface ActivitySample {
+  /** Any time inside the epoch, epoch milliseconds. */
+  t: number;
+  activity: number;
+  samples: number;
+}
+
 /** One fixed-length slice of aggregated sensor data. */
 export interface Epoch {
   start: number;

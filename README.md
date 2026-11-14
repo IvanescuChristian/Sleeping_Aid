@@ -1,14 +1,25 @@
 # Sleeping_Aid
 
-Sleeping_Aid is an installable web app (PWA) that wakes you with a smart alarm.
+Sleeping_Aid is a smart alarm: an installable web app (PWA), an Android phone app
+and an optional Wear OS watch companion.
 You choose a wake window, for example 06:30 to 07:00. During the night the app
 estimates your sleep stage from the phone's motion sensor (lying on the mattress)
 and, optionally, a Bluetooth heart-rate sensor. It rings the alarm at the first
 moment inside the window when you are in light sleep, and at the window end at
 the latest.
 
-Status: working MVP (version 0.1.0), Android Chrome first. Read the status table
-and the reliability limits below before relying on it for something important.
+Status: version 0.1.0, not yet validated on real sleepers or a real night. Read
+the platform status, the status table and the known limits below before relying
+on it for something important.
+
+## Platforms
+
+| Platform | Status |
+| --- | --- |
+| Web app (PWA, Chrome on Android) | Working; verified in a desktop browser emulating a phone. Cannot ring reliably with the screen off. |
+| Android phone app (sideloaded APK) | Built and unit-tested. Has a native hard alarm (system alarm clock) that rings at the window end with the screen off. The smart wake runs natively (Kotlin port of the engine), so it works with the screen off, the app in the background or swiped away. Verified on an Android 35 emulator (screen off, Doze, app removed, process killed); not yet tested on a real phone night. |
+| Wear OS watch companion (Galaxy Watch4 and other Wear OS 3+ watches) | Built, **not tested on a real watch**. Streams heart rate and wrist motion to the phone app. |
+| iOS | Not supported. |
 
 ## How the smart wake works
 
@@ -27,21 +38,39 @@ only (see ARCHITECTURE.md) and are not yet validated on real sleepers.
 
 ## Reliability limits (read this)
 
-- Android with Chrome (or an installed Chrome PWA) is the target. iOS is not
-  supported for live nights: iOS suspends JavaScript when the screen is off, so
-  the alarm could not run.
-- The web platform cannot schedule a reliable alarm in the background. Keep the
-  phone charging and the app open on screen. The app holds a Screen Wake Lock
-  and warns you if it is lost.
-- As a fail-safe, also set your phone's regular alarm for the window end.
-- If the page reloads during the night, the night resumes from the stored window
-  and still fires, but sensor history from before the reload is lost, and sound
-  may need one tap to be allowed by the browser.
-- Do not rely on this app alone for flights, exams or shifts.
+Android phone app:
+
+- The hard alarm at the window end is a native system alarm clock (`AlarmManager.setAlarmClock`). It rings with the screen off and the phone locked, and does not need the app on screen. It needs the "Alarms & reminders" permission; without it the night will not start.
+- The smart wake (ringing early, in light sleep) is decided by a native Kotlin port of the engine, run by a foreground "night" service. It needs neither the screen nor the app: motion comes from the phone accelerometer (and heart rate plus wrist motion from the watch, if connected), staging and the decision happen natively, and the epochs are stored so the app can draw the night when you open it. If the smart rule never fires, the exact backup alarm at the window end rings. Both go through the same alarm path, and the night records which one woke you.
+- Power: where the phone has a wake-up accelerometer the CPU is woken only to deliver batches (about every 20 s) and no wake lock is held. Without one, a bounded partial wake lock keeps the CPU up until shortly after the window end. In deep Doze (phone unplugged and motionless for a long time) Android may still pause tracking on such phones; the backup alarm is unaffected. Setting the battery to "Unrestricted" (docs/ANDROID_INSTALL.md) avoids that.
+- If Android kills the process the service restarts itself and continues from its stored epochs. After a reboot the backup alarm is re-armed and tracking restarts if Android allows it; otherwise a "Tap to resume night tracking" notification appears.
+- Heart rate on the phone app comes from the Wear OS watch only: Bluetooth heart rate through the web view cannot run reliably with the screen off.
+- As a fail-safe, still set your phone's regular alarm for the window end.
+
+Web app (PWA):
+
+- iOS is not supported for live nights: iOS suspends JavaScript when the screen is off, so the alarm could not run.
+- The web platform cannot schedule a reliable alarm in the background. Keep the phone charging and the app open on screen. The app holds a Screen Wake Lock and warns you if it is lost. (The Android app does not need this: its engine is native.)
+- If the page reloads during the night, the night resumes from the stored window and still fires, but sensor history from before the reload is lost, and sound may need one tap to be allowed by the browser.
+
+Both: do not rely on this app alone for flights, exams or shifts.
+
+## Known limits
+
+- Wrist (watch) motion thresholds are tuned for a phone lying on a mattress. Wrist activity is a different signal, so staging from the watch is unvalidated and may be too sensitive or not sensitive enough.
+- Watch data reaches the phone about 60 seconds late (every watch timestamp is shifted by 60 s so epochs line up). Hypnogram times and smart-wake decisions lag by that much.
+- The Wear OS Data Layer is best effort: messages can be delayed or lost if the watch is out of range or its Bluetooth link drops. The phone sensor takes over if the watch goes silent.
+- There is no correction for clock differences between the watch and the phone.
+- Stage accuracy has only been measured on synthetic nights, whose generator shares assumptions with the stager. The numbers are optimistic.
+- Samsung One UI battery optimisation can stop background apps. Set Sleeping Aid to "Unrestricted" (see docs/ANDROID_INSTALL.md).
+- Samsung Health may show an exercise or meditation-like session on the watch while it records, because heart-rate recording uses an Android exercise session. Battery use of the watch over a night is not yet measured.
 
 ## Which watches can feed heart rate
 
-The app reads the standard Bluetooth Low Energy Heart Rate Service (Web
+Wear OS watches (for example Galaxy Watch4 Classic) use the Sleeping Aid watch app
+described in docs/WATCH_SETUP.md; this is untested on real hardware.
+
+In the web app, and as an alternative in the Android app, the app reads the standard Bluetooth Low Energy Heart Rate Service (Web
 Bluetooth, Chrome on Android). Devices that broadcast standard BLE heart rate can
 work, for example:
 
@@ -56,12 +85,21 @@ with fewer smart wakes.
 
 ## Privacy
 
-All data stays on your device in browser localStorage. There is no network
-traffic, no account and no analytics. Only night summaries and a coarse
+All data stays on your device (browser localStorage; in the Android app, the app's
+own storage). The Android app does not even request the INTERNET permission. The
+phone and watch talk to each other directly over the Wear OS Data Layer. There is
+no account and no analytics. Only night summaries and a coarse
 hypnogram are stored; raw sensor streams are never saved. "Delete all data" on
 the summary screen removes everything.
 
-## Install, run, build, test
+## Install
+
+- **Web:** open the served app in Chrome on Android over HTTPS and choose "Install app" (Web Bluetooth, Wake Lock and service workers need HTTPS or localhost).
+- **Android phone app:** download the APK from the GitHub Releases page and follow docs/ANDROID_INSTALL.md. Prerelease and local builds are signed with a debug key and are for testing only; see docs/SIGNING.md.
+- **Watch (Wear OS):** sideload the watch APK over Wi-Fi debugging, see docs/WATCH_SETUP.md. Not yet tested on a real Galaxy Watch4.
+- **Before the first real night:** work through docs/NIGHT_TEST_CHECKLIST.md, starting with a 20-minute nap test.
+
+## Run, build, test
 
 Requires Node 24.
 
@@ -70,19 +108,17 @@ npm install
 npm run dev          # development server
 npm run build        # production build into dist/
 npm run preview      # serve the production build (http://localhost:4173)
-npm test             # unit tests (engine, simulation, app logic)
+npm test             # unit tests (engine, simulation, app logic, native glue)
 npm run typecheck
 npm run test:e2e     # Playwright end-to-end tests against the preview build
+scripts/build-android.sh   # phone and watch APKs into dist-android/ (needs JDK 21 and the Android SDK)
 ```
 
 The end-to-end tests need a Chromium. They use Playwright's own build if
 installed, otherwise the newest Chromium found in the local Playwright cache, or
 the path in `PW_CHROMIUM_PATH`. On a machine without a display run them under a
-virtual display.
-
-To install on a phone, open the served app in Chrome on Android over HTTPS and
-choose "Install app" (Web Bluetooth, Wake Lock and service workers need HTTPS or
-localhost).
+virtual display. Continuous integration (`.github/workflows/android.yml`) runs
+the tests and builds both APKs; a `v*` tag publishes a GitHub Release.
 
 ## Status
 
@@ -93,7 +129,11 @@ localhost).
 | Setup validation, fallback alarm, reload resume, demo, history, delete | Verified (Playwright, desktop Chromium emulating a phone) |
 | Offline service worker and manifest | Verified (Playwright) |
 | Stage accuracy on real sleepers | Not verified |
-| Real Android phone: motion, Wake Lock, audio over a night | Not verified |
+| Native hard alarm, boot re-arm (Android) | Verified on an Android 35 emulator (screen off, Doze, reboot) |
+| Native smart-wake engine: JVM unit tests plus parity with the JS engine on shared synthetic nights | Verified (`./gradlew :app:testDebugUnitTest`) |
+| Native smart wake with the screen off, in Doze, app swiped away, process killed | Verified on an Android 35 emulator (synthetic accelerometer); wake-up-sensor path and a real night not verified |
+| Real Android phone: motion, hard alarm, battery over a night | Not verified |
+| Wear OS watch app and Data Layer link on a real watch | Not verified |
 | Bluetooth heart rate with real watches or straps | Not verified |
 | iOS | Not supported |
 

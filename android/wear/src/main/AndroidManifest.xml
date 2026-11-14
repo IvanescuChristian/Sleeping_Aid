@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-feature android:name="android.hardware.type.watch" />
+
+    <application
+        android:allowBackup="false"
+        android:icon="@drawable/ic_launcher"
+        android:label="Sleeping Aid"
+        android:theme="@android:style/Theme.DeviceDefault">
+
+        <!-- The watch app is only a sensor relay for the phone app: it needs the phone to do anything. -->
+        <meta-data
+            android:name="com.google.android.wearable.standalone"
+            android:value="false" />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Records heart rate (Health Services exercise session) and wrist motion, and sends them to the phone. -->
+        <service
+            android:name=".TrackingService"
+            android:exported="false"
+            android:foregroundServiceType="health" />
+
+        <!-- Receives /sleepaid/start and /sleepaid/stop from the phone app. -->
+        <service
+            android:name=".CommandService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/sleepaid/" />
+            </intent-filter>
+        </service>
+    </application>
+
+    <!-- WHY: heart rate from the wrist sensor. -->
+    <uses-permission android:name="android.permission.BODY_SENSORS" />
+    <!-- WHY: lets the phone start a night while the watch screen is off, without the app being on screen. -->
+    <uses-permission android:name="android.permission.BODY_SENSORS_BACKGROUND" />
+    <!-- WHY: Health Services exercise sessions require it. -->
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+    <!-- WHY: the night recording runs as a foreground service of type health. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
+    <!-- WHY: the ongoing notification and the "tap to start" prompt. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- WHY: keeps the CPU awake for the accelerometer on watches whose sensor cannot wake it. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+</manifest>

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Strict-1.0.0
 // Copyright (c) 2026 Christian Ivanescu. See LICENSE for terms (source-available; not open source).
 import type { MotionSample } from '../engine/types';
+import { isNativeAndroid } from '../native/plugin';
 import { parseHeartRate } from './hr';
 
 // ---------- Motion ----------
@@ -193,6 +194,49 @@ export class HeartRateMonitor {
   }
 }
 
+// ---------- Heart rate from the Wear OS watch ----------
+
+/** The watch delivers heart rate in batches roughly every 30 s, so "fresh" is much longer than for a live BLE stream. */
+const WATCH_HR_STALE_MS = 150_000;
+
+/**
+ * Heart rate relayed by the watch app. It plugs into NightSession exactly where the Bluetooth monitor does:
+ * the session sets `onSample` and reads `current()`, `state` and `disconnect()`. The feed (src/native/watch.ts)
+ * calls `push()` for every sample.
+ */
+export class WatchHeartRate extends HeartRateMonitor {
+  constructor() {
+    super();
+    this.deviceName = 'Wear OS watch';
+  }
+
+  /** `t` is the (already shifted) sample time for the stager; `receivedAt` is the phone clock when it arrived. */
+  push(bpm: number, t: number, receivedAt: number = Date.now()): void {
+    this.bpm = bpm;
+    this.lastAt = receivedAt;
+    if (this.state !== 'connected') {
+      this.state = 'connected';
+      this.onChange?.();
+    }
+    this.onSample?.(bpm, t);
+  }
+
+  override current(now: number = Date.now()): number | null {
+    return this.bpm !== null && now - this.lastAt < WATCH_HR_STALE_MS ? this.bpm : null;
+  }
+
+  override async connect(): Promise<void> {
+    throw new Error('The watch connects through the watch app, not from here');
+  }
+
+  /** The session calls this when a night ends; there is no Bluetooth link to close. */
+  override disconnect(): void {
+    this.state = 'idle';
+    this.bpm = null;
+    this.lastAt = 0;
+  }
+}
+
 // ---------- Screen Wake Lock ----------
 
 export type WakeLockState = 'pending' | 'held' | 'lost' | 'unavailable';
@@ -203,6 +247,8 @@ interface Sentinel extends EventTarget {
 
 export class WakeLockHolder {
   state: WakeLockState = 'pending';
+  /** On native Android the activity keeps the screen on itself; the WebView API is unreliable there. */
+  constructor(private readonly native: () => boolean = isNativeAndroid) {}
   onChange: (() => void) | null = null;
   private sentinel: Sentinel | null = null;
   private active = false;
@@ -212,6 +258,7 @@ export class WakeLockHolder {
 
   start(): void {
     this.active = true;
+    if (this.native()) return;
     document.addEventListener('visibilitychange', this.onVisible);
     void this.acquire();
   }

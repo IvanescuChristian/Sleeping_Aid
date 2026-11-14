@@ -3,7 +3,7 @@
 import { EpochAggregator } from './epochs';
 import { SmartAlarm, type AlarmDecision } from './smartAlarm';
 import { Stager } from './stager';
-import type { Clock, Epoch, EpochResult, HrSample, MotionSample } from './types';
+import type { ActivitySample, Clock, Epoch, EpochResult, HrSample, MotionSample } from './types';
 
 export interface EpochStager {
   process(e: Epoch): EpochResult;
@@ -30,6 +30,14 @@ export class Pipeline {
   ingestMotion(s: MotionSample): void {
     try {
       this.process(this.aggregator.ingestMotion(s));
+    } catch {
+      this.pipelineErrors++;
+    }
+  }
+
+  ingestActivity(s: ActivitySample): void {
+    try {
+      this.process(this.aggregator.ingestActivity(s));
     } catch {
       this.pipelineErrors++;
     }

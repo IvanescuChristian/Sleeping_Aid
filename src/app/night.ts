@@ -3,7 +3,7 @@
 import { Pipeline } from '../engine/pipeline';
 import type { AlarmDecision } from '../engine/smartAlarm';
 import { summarizeNight } from '../engine/summary';
-import type { Stage } from '../engine/types';
+import type { EpochResult, Stage } from '../engine/types';
 import { DemoFeeder } from './demo';
 import { AlarmScheduler } from './scheduler';
 import { HeartRateMonitor, MotionSensor, WakeLockHolder, type MotionState, type WakeLockState } from './sensors';
@@ -12,6 +12,34 @@ import { downsample, saveActive, saveNight, type ActiveNight, type StoredAlarm, 
 const BIN_EPOCHS = 10;
 /** Less than this much staged data (10 min) is not worth a history entry. */
 const MIN_KNOWN_EPOCHS = 20;
+
+/**
+ * Summarises staged epochs and stores the night (summary numbers and a coarse hypnogram only). Shared by the web
+ * session and the native night, whose epochs come from the Android engine. Null when there is too little data.
+ */
+export function saveNightSummary(
+  results: readonly EpochResult[],
+  o: { windowStart: number; windowEnd: number; alarm: StoredAlarm | null; demo: boolean },
+): StoredNight | null {
+  try {
+    if (results.filter((r) => r.stage !== 'unknown').length < MIN_KNOWN_EPOCHS) return null;
+    const summary = summarizeNight(results);
+    summary.hypnogram = downsample(summary.hypnogram, BIN_EPOCHS);
+    const night: StoredNight = {
+      id: summary.startMs,
+      summary,
+      binEpochs: BIN_EPOCHS,
+      windowStart: o.windowStart,
+      windowEnd: o.windowEnd,
+      alarm: o.alarm,
+      demo: o.demo,
+    };
+    saveNight(night);
+    return night;
+  } catch {
+    return null;
+  }
+}
 
 export interface NightStatus {
   now: number;
@@ -23,6 +51,8 @@ export interface NightStatus {
   wakeLock: WakeLockState;
   pipelineErrors: number;
   demo: boolean;
+  /** Native night only: where motion comes from. Absent on the web. */
+  motionSource?: 'phone' | 'watch' | 'watch-waiting' | 'none';
 }
 
 export interface NightOptions {
@@ -162,25 +192,7 @@ export class NightSession {
   }
 
   private persistSummary(alarm: StoredAlarm | null): StoredNight | null {
-    try {
-      const results = this.pipeline.results;
-      if (results.filter((r) => r.stage !== 'unknown').length < MIN_KNOWN_EPOCHS) return null;
-      const summary = summarizeNight(results);
-      summary.hypnogram = downsample(summary.hypnogram, BIN_EPOCHS);
-      const night: StoredNight = {
-        id: summary.startMs,
-        summary,
-        binEpochs: BIN_EPOCHS,
-        windowStart: this.windowStart,
-        windowEnd: this.windowEnd,
-        alarm,
-        demo: this.demo !== null,
-      };
-      saveNight(night);
-      return night;
-    } catch {
-      return null;
-    }
+    return saveNightSummary(this.pipeline.results, { windowStart: this.windowStart, windowEnd: this.windowEnd, alarm, demo: this.demo !== null });
   }
 
   /** At most once per second in real use; the demo runs faster so it stays watchable. */
